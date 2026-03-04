@@ -274,7 +274,7 @@ private extension ConduitRouter {
         }
     }
 
-    func dismissAllPresentedViewControllers(completion: @escaping @Sendable () -> Void) {
+    func dismissAllPresentedViewControllers(completion: @escaping @MainActor () -> Void) {
         guard !presentedNavStack.isEmpty else {
             completion()
             return
