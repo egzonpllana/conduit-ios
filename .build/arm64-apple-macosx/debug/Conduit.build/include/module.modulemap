@@ -1,0 +1,3 @@
+module Conduit {
+    header "/Users/egzonpllana/Documents/GitHub/conduit-ios/.build/arm64-apple-macosx/debug/Conduit.build/include/Conduit-Swift.h"
+}
