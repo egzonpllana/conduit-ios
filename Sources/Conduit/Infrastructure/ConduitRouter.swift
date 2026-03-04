@@ -10,94 +10,104 @@ import UIKit
 import SwiftUI
 import Combine
 
-/// The core navigation router that translates ``ConduitAction`` values into UIKit navigation operations.
+/// The core navigation router that translates `ConduitAction` values into UIKit operations.
 ///
-/// `ConduitRouter` subscribes to a ``ConduitDispatching`` publisher and performs
-/// push, present, pop, dismiss, and tab selection operations on UIKit navigation controllers.
-/// It wraps SwiftUI views in `UIHostingController` using the injected view factory.
+/// `ConduitRouter` subscribes to a dispatcher's action publisher and performs
+/// the corresponding push, present, pop, dismiss, or tab selection on
+/// the active `UINavigationController`.
 ///
 /// ```swift
-/// let router = ConduitRouter(
-///     viewFactory: AppViewFactory(),
-///     dispatcher: dispatcher
-/// )
-/// router.start(in: window, rootViewController: tabBarController)
+/// let dispatcher = ConduitDispatcher<AppDestination>()
+/// let factory = AppViewFactory()
+/// let router = ConduitRouter(dispatcher: dispatcher, viewFactory: factory)
+/// router.updateActiveWindow(window)
 /// ```
 @MainActor
 public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
 
     // MARK: - Properties
 
-    private let viewFactory: Factory
     private let dispatcher: any ConduitDispatching<Factory.Destination>
+    private let viewFactory: Factory
     private var cancellables = Set<AnyCancellable>()
-    private var presentedNavStack: [UINavigationController] = []
-    private weak var activeWindow: UIWindow?
-    private weak var tabController: UITabBarController?
+    private var activeWindow: UIWindow?
+    private var tabController: UITabBarController?
     private var rootNavigationController: UINavigationController?
+    private var presentedNavStack: [UINavigationController] = []
     private var isBound = false
 
     // MARK: - Initialization
 
-    /// Creates a router with a view factory and dispatcher.
+    /// Creates a new router bound to a dispatcher and view factory.
     ///
     /// - Parameters:
-    ///   - viewFactory: The factory that creates SwiftUI views from destinations.
-    ///   - dispatcher: The dispatcher that publishes navigation actions.
+    ///   - dispatcher: The dispatcher to subscribe to for navigation actions.
+    ///   - viewFactory: The factory that builds views for each destination.
     public init(
-        viewFactory: Factory,
-        dispatcher: any ConduitDispatching<Factory.Destination>
+        dispatcher: any ConduitDispatching<Factory.Destination>,
+        viewFactory: Factory
     ) {
-        self.viewFactory = viewFactory
         self.dispatcher = dispatcher
+        self.viewFactory = viewFactory
+        self.rootNavigationController = UINavigationController()
     }
 
     // MARK: - ConduitRouting
 
-    public func start(in window: UIWindow, rootViewController: UIViewController) {
-        self.activeWindow = window
-        window.rootViewController = rootViewController
-        window.makeKeyAndVisible()
+    /// Replaces the window's root view controller.
+    ///
+    /// - Parameters:
+    ///   - viewController: The new root view controller.
+    ///   - window: The window to update. If `nil`, uses the active window.
+    public func changeRoot(to viewController: UIViewController, in window: UIWindow? = nil) {
+        let targetWindow = window ?? activeWindow
+        presentedNavStack.removeAll()
 
-        if let tabBar = rootViewController as? UITabBarController {
-            self.tabController = tabBar
-        } else if let nav = rootViewController as? UINavigationController {
-            self.rootNavigationController = nav
+        if let oldRoot = targetWindow?.rootViewController {
+            oldRoot.dismiss(animated: false)
+            if let nav = oldRoot as? UINavigationController {
+                nav.setViewControllers([], animated: false)
+            }
         }
 
+        if let nav = viewController as? UINavigationController {
+            rootNavigationController = nav
+        } else if let tab = viewController as? UITabBarController {
+            tabController = tab
+            rootNavigationController = nil
+        } else {
+            let nav = UINavigationController(rootViewController: viewController)
+            rootNavigationController = nav
+            targetWindow?.rootViewController = nav
+            targetWindow?.makeKeyAndVisible()
+            bindDispatcher()
+            return
+        }
+
+        targetWindow?.rootViewController = viewController
+        targetWindow?.makeKeyAndVisible()
         bindDispatcher()
     }
 
+    /// Updates the currently active window used by the router.
+    ///
+    /// - Parameter window: The new `UIWindow` instance to track.
     public func updateActiveWindow(_ window: UIWindow) {
         self.activeWindow = window
+        bindDispatcher()
     }
 
-    public func changeRoot(to viewController: UIViewController) {
-        presentedNavStack.removeAll()
-        rootNavigationController?.popToRootViewController(animated: false)
-        rootNavigationController?.setViewControllers([], animated: false)
-
-        if let tabBar = viewController as? UITabBarController {
-            self.tabController = tabBar
-            self.rootNavigationController = nil
-        } else if let nav = viewController as? UINavigationController {
-            self.rootNavigationController = nav
-            self.tabController = nil
-        } else {
-            let nav = UINavigationController(rootViewController: viewController)
-            self.rootNavigationController = nav
-            self.tabController = nil
-        }
-
-        activeWindow?.rootViewController = viewController
-        activeWindow?.makeKeyAndVisible()
+    /// Assigns a tab bar controller for tab-based navigation.
+    ///
+    /// - Parameter tabBarController: The tab bar controller to manage.
+    public func setTabController(_ tabBarController: UITabBarController) {
+        self.tabController = tabBarController
     }
 }
 
 // MARK: - Dispatcher Binding
 
 private extension ConduitRouter {
-
     func bindDispatcher() {
         guard isBound == false else { return }
         isBound = true
@@ -106,23 +116,21 @@ private extension ConduitRouter {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] action in
                 guard let self else { return }
-                self.handle(action)
+                guard let navController = self.resolveActiveNavigationController() else {
+                    self.logConduitError("No active UINavigationController to perform navigation.")
+                    return
+                }
+                self.handle(action, using: navController)
             }
             .store(in: &cancellables)
     }
 
-    func handle(_ action: ConduitAction<Factory.Destination>) {
-        guard let navController = resolveActiveNavigationController() else {
-            logDebug("No active UINavigationController to perform navigation.")
-            return
-        }
-
+    func handle(_ action: ConduitAction<Factory.Destination>, using navController: UINavigationController) {
         switch action {
         case let .push(destination, barPreferences):
             handlePush(destination, using: navController, preferences: barPreferences)
 
-        case let .present(destination, style, isModalInPresentation, detents,
-                          preferredHeight, showDragIndicator, barPreferences, animated):
+        case let .present(destination, style, isModalInPresentation, detents, preferredHeight, showDragIndicator, barPreferences, animated):
             handlePresent(
                 destination,
                 using: navController,
@@ -148,7 +156,14 @@ private extension ConduitRouter {
             navController.popToRootViewController(animated: true)
 
         case let .dismiss(animated, completion):
-            handleDismiss(animated: animated, completion: completion)
+            if let topPresented = presentedNavStack.last {
+                topPresented.dismiss(animated: animated) { [weak self] in
+                    if let self, !self.presentedNavStack.isEmpty {
+                        self.presentedNavStack.removeLast()
+                    }
+                    completion?()
+                }
+            }
 
         case let .selectTab(tabIndex):
             handleSelectTab(tabIndex)
@@ -159,20 +174,41 @@ private extension ConduitRouter {
     }
 }
 
-// MARK: - Navigation Handlers
+// MARK: - Navigation Helpers
 
 private extension ConduitRouter {
+    func resolveActiveNavigationController() -> UINavigationController? {
+        while let top = presentedNavStack.last {
+            if top.view.window != nil {
+                return top
+            } else {
+                presentedNavStack.removeLast()
+            }
+        }
+
+        guard let rootVC = activeWindow?.rootViewController else {
+            logConduitError("No root view controller set.")
+            return nil
+        }
+
+        if let tabBar = rootVC as? UITabBarController,
+           let nav = tabBar.selectedViewController as? UINavigationController {
+            return nav
+        }
+
+        return rootVC.closestNavigationController()
+    }
 
     func handlePush(
         _ destination: Factory.Destination,
         using navController: UINavigationController,
         preferences: ConduitBarPreferences
     ) {
-        let view = viewFactory.makeView(for: destination)
+        let view = viewFactory.makeView(destination)
         let hostingController = UIHostingController(rootView: view)
         hostingController.navigationItem.largeTitleDisplayMode = preferences.largeTitleDisplayMode.uiKit
         hostingController.hidesBottomBarWhenPushed = preferences.hideTabBar
-        hostingController.restorationIdentifier = viewFactory.makeIdentifier(for: destination)
+        hostingController.restorationIdentifier = viewFactory.makeIdentifier(destination)
         navController.setNavigationBarHidden(preferences.isHidden, animated: true)
         navController.pushViewController(hostingController, animated: true)
     }
@@ -188,10 +224,10 @@ private extension ConduitRouter {
         preferences: ConduitBarPreferences,
         animated: Bool
     ) {
-        let view = viewFactory.makeView(for: destination)
+        let view = viewFactory.makeView(destination)
         let hostingController = UIHostingController(rootView: view)
         hostingController.navigationItem.largeTitleDisplayMode = preferences.largeTitleDisplayMode.uiKit
-        hostingController.restorationIdentifier = viewFactory.makeIdentifier(for: destination)
+        hostingController.restorationIdentifier = viewFactory.makeIdentifier(destination)
 
         let wrappedNav = UINavigationController(rootViewController: hostingController)
         wrappedNav.modalPresentationStyle = style.uiKit
@@ -211,48 +247,34 @@ private extension ConduitRouter {
         presentedNavStack.append(wrappedNav)
     }
 
-    func handleDismiss(animated: Bool, completion: (() -> Void)?) {
-        guard let topPresented = presentedNavStack.last else { return }
-        topPresented.dismiss(animated: animated) { [weak self] in
-            if let self, !self.presentedNavStack.isEmpty {
-                self.presentedNavStack.removeLast()
-            }
-            completion?()
-        }
-    }
-
     func handleSelectTab(_ tabIndex: Int) {
         guard let tabBar = tabController else {
-            logDebug("No tab controller available for tab selection.")
+            logConduitError("No tab controller available for tab selection.")
             return
         }
         guard tabIndex >= 0, tabIndex < (tabBar.viewControllers?.count ?? 0) else {
-            logDebug("Invalid tab index: \(tabIndex)")
+            logConduitError("Invalid tab index: \(tabIndex)")
             return
         }
         tabBar.selectedIndex = tabIndex
     }
 
-    func handlePopToRootAndSelectTab(tabIndex: Int, completion: (() -> Void)?) {
-        dismissAllPresented { [weak self] in
+    func handlePopToRootAndSelectTab(tabIndex: Int, completion: (@Sendable () -> Void)?) {
+        dismissAllPresentedViewControllers { [weak self] in
             guard let self else {
                 completion?()
                 return
             }
             self.popAllNavigationStacksToRoot()
             self.handleSelectTab(tabIndex)
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 completion?()
             }
         }
     }
-}
 
-// MARK: - Stack Management
-
-private extension ConduitRouter {
-
-    func dismissAllPresented(completion: @escaping () -> Void) {
+    func dismissAllPresentedViewControllers(completion: @escaping @Sendable () -> Void) {
         guard !presentedNavStack.isEmpty else {
             completion()
             return
@@ -274,39 +296,19 @@ private extension ConduitRouter {
 
     func popAllNavigationStacksToRoot() {
         guard let tabBar = tabController,
-              let viewControllers = tabBar.viewControllers else { return }
+              let viewControllers = tabBar.viewControllers else {
+            return
+        }
         for viewController in viewControllers {
-            if let nav = viewController as? UINavigationController {
-                nav.popToRootViewController(animated: false)
+            if let navController = viewController as? UINavigationController {
+                navController.popToRootViewController(animated: false)
             }
         }
     }
 
-    func resolveActiveNavigationController() -> UINavigationController? {
-        while let top = presentedNavStack.last {
-            if top.view.window != nil {
-                return top
-            } else {
-                presentedNavStack.removeLast()
-            }
-        }
-
-        guard let rootVC = activeWindow?.rootViewController else {
-            logDebug("No root view controller set.")
-            return nil
-        }
-
-        if let tabBar = rootVC as? UITabBarController,
-           let nav = tabBar.selectedViewController as? UINavigationController {
-            return nav
-        }
-
-        return rootVC.conduit_closestNavigationController()
-    }
-
-    func logDebug(_ message: String) {
+    func logConduitError(_ message: String) {
         #if DEBUG
-        print("[Conduit] \(message)")
+        print("[Conduit] Error: \(message)")
         #endif
     }
 }

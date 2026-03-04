@@ -52,3 +52,13 @@ public protocol ConduitViewFactory {
     /// - Returns: A string identifier, or `nil` if not needed.
     func makeIdentifier(_ destination: Destination) -> String?
 }
+
+// MARK: - Default Implementation
+
+public extension ConduitViewFactory {
+
+    /// Default implementation returns `nil` for all destinations.
+    func makeIdentifier(_ destination: Destination) -> String? {
+        nil
+    }
+}

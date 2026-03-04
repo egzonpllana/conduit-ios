@@ -7,44 +7,37 @@
 
 import Combine
 
-/// A Combine-based implementation of the navigation dispatcher.
+/// A concrete dispatcher that broadcasts navigation actions via a Combine subject.
 ///
-/// Uses a `PassthroughSubject` to broadcast navigation actions to all subscribers.
-/// Thread-safe via `@MainActor` isolation.
+/// This is the standard implementation of `ConduitDispatching`. Inject it into
+/// view models so they can emit navigation actions without knowing about UIKit.
 ///
 /// ```swift
 /// let dispatcher = ConduitDispatcher<AppDestination>()
-/// dispatcher.send(.push(.profile(userId: "123")))
+/// dispatcher.send(.push(.home))
 /// ```
 @MainActor
-public final class ConduitDispatcher<Destination: ConduitDestination>: ConduitDispatching {
+public final class ConduitDispatcher<Destination: ConduitDestination>: ConduitDispatching, ObservableObject {
 
     // MARK: - Properties
 
     private let subject = PassthroughSubject<ConduitAction<Destination>, Never>()
-    nonisolated(unsafe) private var _actionPublisher: AnyPublisher<ConduitAction<Destination>, Never>?
 
-    // MARK: - ConduitDispatching
-
-    nonisolated public var actionPublisher: AnyPublisher<ConduitAction<Destination>, Never> {
-        guard let publisher = _actionPublisher else {
-            fatalError("[Conduit] Dispatcher accessed before initialization.")
-        }
-        return publisher
+    /// A publisher that emits navigation actions sent through the dispatcher.
+    public var actionPublisher: AnyPublisher<ConduitAction<Destination>, Never> {
+        subject.eraseToAnyPublisher()
     }
 
     // MARK: - Initialization
 
-    /// Creates a new navigation dispatcher.
-    public init() {
-        _actionPublisher = subject.eraseToAnyPublisher()
-    }
+    /// Creates a new dispatcher instance.
+    public init() {}
 
     // MARK: - Methods
 
     /// Sends a navigation action to all subscribers.
     ///
-    /// - Parameter action: The navigation action to dispatch.
+    /// - Parameter action: The navigation action to broadcast.
     public func send(_ action: ConduitAction<Destination>) {
         subject.send(action)
     }

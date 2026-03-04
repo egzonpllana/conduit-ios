@@ -10,35 +10,35 @@ import UIKit
 
 extension UIViewController {
 
-    /// Walks the presentation chain and child hierarchy to find the nearest `UINavigationController`.
+    /// Walks the entire presentation chain and finds the topmost visible `UINavigationController`.
     ///
-    /// Checks presented view controllers first, then falls back to
-    /// the navigation controller property, tab bar children, and container children.
+    /// Traverses presented view controllers, tab bar controllers, and child
+    /// view controllers to locate the closest navigation controller in the hierarchy.
     ///
-    /// - Returns: The closest `UINavigationController`, or `nil` if none is found.
-    func conduit_closestNavigationController() -> UINavigationController? {
+    /// - Returns: The topmost `UINavigationController`, or `nil` if none is found.
+    func closestNavigationController() -> UINavigationController? {
         var current: UIViewController? = self
 
         while let presented = current?.presentedViewController {
             current = presented
         }
 
-        if let nav = current as? UINavigationController {
-            return nav
+        if let navigationController = current as? UINavigationController {
+            return navigationController
         }
 
-        if let nav = current?.navigationController {
-            return nav
+        if let navigationController = current?.navigationController {
+            return navigationController
         }
 
-        if let tabBar = current as? UITabBarController,
-           let selected = tabBar.selectedViewController {
-            return selected.conduit_closestNavigationController()
+        if let tabBarController = current as? UITabBarController,
+           let selected = tabBarController.selectedViewController {
+            return selected.closestNavigationController()
         }
 
         for child in current?.children ?? [] {
-            if let nav = child.conduit_closestNavigationController() {
-                return nav
+            if let navigationController = child.closestNavigationController() {
+                return navigationController
             }
         }
 

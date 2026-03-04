@@ -7,20 +7,25 @@
 
 import Foundation
 
-/// Represents a sheet presentation detent for modal presentations.
+/// Defines sheet detent sizes for modal presentations.
 ///
-/// Maps to `UISheetPresentationController.Detent` at the infrastructure layer.
+/// Each case maps to a `UISheetPresentationController.Detent` at the
+/// infrastructure layer. The domain layer remains UIKit-free.
 public enum ConduitDetent: Sendable {
 
-    /// The medium detent (approximately half screen).
+    /// The system medium detent (approximately half screen).
     case medium
 
-    /// The large detent (full screen).
+    /// The system large detent (full height).
     case large
 
-    /// A custom detent with an exact height in points.
+    /// A custom fixed-height detent.
+    ///
+    /// - Parameter height: The height in points.
     case custom(CGFloat)
 
-    /// A fractional detent relative to the maximum available height.
+    /// A fractional detent relative to the maximum detent value.
+    ///
+    /// - Parameter fraction: A value between 0 and 1 representing the fraction.
     case fraction(CGFloat)
 }

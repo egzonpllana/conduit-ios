@@ -17,8 +17,8 @@ import UIKit
 /// struct AppTabConfig: ConduitTabConfiguring {
 ///     func tabItems() -> [ConduitTabItem] {
 ///         [
-///             ConduitTabItem(title: "Home", icon: UIImage(systemName: "house")!, rootView: AnyView(HomeView()), index: 0),
-///             ConduitTabItem(title: "Settings", icon: UIImage(systemName: "gear")!, rootView: AnyView(SettingsView()), index: 1)
+///             ConduitTabItem(title: "Home", icon: homeIcon, rootView: AnyView(HomeView()), index: 0),
+///             ConduitTabItem(title: "Settings", icon: settingsIcon, rootView: AnyView(SettingsView()), index: 1)
 ///         ]
 ///     }
 /// }

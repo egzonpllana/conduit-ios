@@ -7,44 +7,34 @@
 
 #if canImport(UIKit)
 import UIKit
+import SwiftUI
 
-/// A generic, configurable tab bar controller for use with Conduit.
+/// A generic, configurable `UITabBarController` driven by `ConduitTabItem` values.
 ///
-/// Creates tabs from an array of ``ConduitTabItem`` values. Each tab gets
-/// its own `UINavigationController` wrapping the provided root view controller.
+/// Apps provide tab configuration through the `ConduitTabConfiguring` protocol.
+/// The controller builds each tab by wrapping the SwiftUI root view in a
+/// `UIHostingController` inside a `UINavigationController`.
 ///
 /// ```swift
-/// let tabs = [
-///     ConduitTabItem(title: "Home", icon: homeIcon, rootViewController: homeVC, index: 0),
-///     ConduitTabItem(title: "Profile", icon: profileIcon, rootViewController: profileVC, index: 1)
-/// ]
-/// let tabBar = ConduitTabBarController(tabs: tabs, selectedIndex: 0)
+/// let config = AppTabConfig()
+/// let tabBar = ConduitTabBarController(configuration: config)
 /// ```
 @MainActor
 public final class ConduitTabBarController: UITabBarController {
 
     // MARK: - Properties
 
-    private let tabs: [ConduitTabItem]
-    private let initialSelectedIndex: Int
+    private let configuration: any ConduitTabConfiguring
 
     // MARK: - Initialization
 
-    /// Creates a tab bar controller with the given tab items.
+    /// Creates a new tab bar controller with the given configuration.
     ///
-    /// - Parameters:
-    ///   - tabs: The tab configurations to display.
-    ///   - selectedIndex: The initially selected tab index. Defaults to `0`.
-    ///   - tintColor: The tint color for selected tab items. Defaults to system tint.
-    public init(
-        tabs: [ConduitTabItem],
-        selectedIndex: Int = 0,
-        tintColor: UIColor? = nil
-    ) {
-        self.tabs = tabs
-        self.initialSelectedIndex = selectedIndex
+    /// - Parameter configuration: The tab configuration provider.
+    public init(configuration: any ConduitTabConfiguring) {
+        self.configuration = configuration
         super.init(nibName: nil, bundle: nil)
-        setupTabs(tintColor: tintColor)
+        setupTabs()
     }
 
     @available(*, unavailable)
@@ -52,21 +42,25 @@ public final class ConduitTabBarController: UITabBarController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    // MARK: - Private
+    // MARK: - Setup
 
-    private func setupTabs(tintColor: UIColor?) {
-        let controllers = tabs.map { tab -> UINavigationController in
-            let nav = UINavigationController(rootViewController: tab.rootViewController)
-            nav.tabBarItem = UITabBarItem(title: tab.title, image: tab.icon, tag: tab.index)
-            nav.navigationBar.prefersLargeTitles = tab.prefersLargeTitles
-            return nav
+    private func setupTabs() {
+        let items = configuration.tabItems()
+        let controllers = items.map { item in
+            makeTab(item: item)
         }
-        viewControllers = controllers
-        selectedIndex = initialSelectedIndex
+        self.viewControllers = controllers
+    }
 
-        if let tintColor {
-            tabBar.tintColor = tintColor
-        }
+    private func makeTab(item: ConduitTabItem) -> UINavigationController {
+        let rootVC = UIHostingController(rootView: item.rootView)
+        rootVC.title = item.title
+
+        let navController = UINavigationController(rootViewController: rootVC)
+        navController.tabBarItem = UITabBarItem(title: item.title, image: item.icon, tag: item.index)
+        navController.navigationBar.prefersLargeTitles = true
+
+        return navController
     }
 }
 #endif

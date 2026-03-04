@@ -105,7 +105,7 @@ struct ConduitBarPreferencesTests {
     @Test("Default preferences")
     func defaultPreferences() {
         let preferences = ConduitBarPreferences()
-        #expect(preferences.isHidden == true)
+        #expect(preferences.isHidden == false)
         #expect(preferences.hideTabBar == true)
         #expect(preferences.largeTitleDisplayMode == .automatic)
     }
@@ -143,9 +143,9 @@ struct ConduitPresentationStyleTests {
     @Test("All presentation styles exist")
     func allStylesExist() {
         let styles: [ConduitPresentationStyle] = [
-            .pageSheet, .formSheet, .fullScreen, .overFullScreen, .overCurrentContext
+            .pageSheet, .formSheet, .fullScreen, .overFullScreen, .currentContext, .overCurrentContext
         ]
-        #expect(styles.count == 5)
+        #expect(styles.count == 6)
     }
 }
 

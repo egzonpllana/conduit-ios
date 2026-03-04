@@ -5,33 +5,35 @@
 //  Created by Egzon Pllana on 4.3.26.
 //
 
+import Foundation
+
 /// Configuration for navigation bar appearance when pushing or presenting a view.
 ///
-/// Controls visibility, title display mode, and tab bar hiding behavior
+/// Controls visibility, large title behavior, and tab bar visibility
 /// for the destination view controller.
 public struct ConduitBarPreferences: Sendable {
 
     // MARK: - Properties
 
-    /// Whether the navigation bar should be hidden.
-    public let isHidden: Bool
+    /// Whether the navigation bar is hidden.
+    public var isHidden: Bool
 
     /// The large title display mode for the navigation item.
-    public let largeTitleDisplayMode: ConduitLargeTitleDisplayMode
+    public var largeTitleDisplayMode: ConduitLargeTitleDisplayMode
 
-    /// Whether the tab bar should be hidden when this view is pushed.
-    public let hideTabBar: Bool
+    /// Whether the tab bar is hidden when the view is pushed.
+    public var hideTabBar: Bool
 
     // MARK: - Initialization
 
-    /// Creates navigation bar preferences.
+    /// Creates a new bar preferences instance.
     ///
     /// - Parameters:
-    ///   - isHidden: Whether the navigation bar is hidden. Defaults to `true`.
-    ///   - largeTitleDisplayMode: The large title mode. Defaults to `.automatic`.
-    ///   - hideTabBar: Whether to hide the tab bar. Defaults to `true`.
+    ///   - isHidden: Whether the navigation bar is hidden. Defaults to `false`.
+    ///   - largeTitleDisplayMode: The large title display mode. Defaults to `.automatic`.
+    ///   - hideTabBar: Whether to hide the tab bar when pushed. Defaults to `true`.
     public init(
-        isHidden: Bool = true,
+        isHidden: Bool = false,
         largeTitleDisplayMode: ConduitLargeTitleDisplayMode = .automatic,
         hideTabBar: Bool = true
     ) {
@@ -41,19 +43,17 @@ public struct ConduitBarPreferences: Sendable {
     }
 }
 
-// MARK: - Large Title Display Mode
-
-/// Large title display mode for the navigation bar.
+/// SDK-owned large title display mode, independent of UIKit.
 ///
 /// Maps to `UINavigationItem.LargeTitleDisplayMode` at the infrastructure layer.
 public enum ConduitLargeTitleDisplayMode: Sendable {
 
-    /// Inherit the display mode from the previous view controller.
+    /// Inherits the display mode from the previous item on the navigation stack.
     case automatic
 
-    /// Always display a large title.
+    /// Always displays a large title.
     case always
 
-    /// Never display a large title.
+    /// Never displays a large title.
     case never
 }
