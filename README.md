@@ -27,6 +27,35 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 ## Architecture
 
+![Conduit Architecture Diagram](conduit-architecture-diagram.png)
+
+The diagram illustrates seven navigation flows handled by Conduit's core actors:
+
+| Actor | Role |
+|-------|------|
+| **SceneDelegate / App** | Entry point that creates the window, router, and tab bar |
+| **ConduitRouter** | Central coordinator that subscribes to dispatched actions and executes UIKit transitions |
+| **ConduitDispatcher** | Combine-based publisher that view models use to send navigation actions |
+| **NavigationController** | UIKit navigation stack resolved by the router for push/pop operations |
+| **ConduitViewFactory** | Factory that maps generic destinations to concrete SwiftUI views |
+| **UINavigationController** | UIKit host wrapping SwiftUI views via `UIHostingController` |
+| **ConduitTabBarController** | Generic tab bar managing multiple navigation stacks and tab selection |
+| **ViewModels** | Consumer layer that triggers navigation by sending actions through the dispatcher |
+
+### Flows Covered
+
+| # | Flow | Description |
+|---|------|-------------|
+| 1 | **App Launch** | Window setup, router start, tab bar configuration, Combine subscription |
+| 2 | **Push Navigation** | Dispatcher sends push action, router resolves nav controller, pushes hosting controller |
+| 3 | **Modal Presentation** | Present with sheet style, detents, and drag indicator via `present(_:animated:)` |
+| 4 | **Pop and Dismiss** | Pop from navigation stack or dismiss presented modals with stack tracking |
+| 5 | **Tab Selection and Pop to Root** | Dismiss all presented controllers, pop all stacks, switch selected tab |
+| 6 | **Change Root** | Tear down presented stack, replace `window.rootViewController` (e.g., sign-out) |
+| 7 | **Bar Preferences** | Configure navigation bar visibility, large title mode, and tab bar hiding per push |
+
+### Source Layout
+
 ```
 Sources/Conduit/
 ├── Core/

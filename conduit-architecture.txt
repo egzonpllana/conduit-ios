@@ -1,0 +1,94 @@
+sequenceDiagram
+    participant App as SceneDelegate / App
+    participant Router as ConduitRouter
+    participant Dispatcher as ConduitDispatcher
+    participant Combine as PassthroughSubject
+    participant Factory as ConduitViewFactory
+    participant UIKit as UINavigationController
+    participant TabBar as ConduitTabBarController
+    participant VM as ViewModel
+
+    Note over App,VM: Flow 1: App Launch — Setup Router and Tab Bar
+
+    App->>Factory: AppViewFactory()
+    App->>Dispatcher: ConduitDispatcher<AppDestination>()
+    App->>Router: ConduitRouter(viewFactory, dispatcher)
+    App->>TabBar: ConduitTabBarController(<br/>tabs: [ConduitTabItem],<br/>selectedIndex: 0)
+    Note right of TabBar: Each tab wraps a<br/>UINavigationController<br/>with a SwiftUI root
+    App->>Router: start(in: window,<br/>rootViewController: tabBar)
+    Router->>Dispatcher: Subscribe to action publisher
+    Dispatcher->>Combine: Publisher connected
+    Router->>App: Window configured and visible
+
+    Note over App,VM: Flow 2: Push Navigation
+
+    VM->>Dispatcher: send(.push(.settings))
+    Dispatcher->>Combine: subject.send(.push(.settings))
+    Combine-->>Router: ConduitAction received
+    Router->>Factory: makeView(for: .settings)
+    Factory-->>Router: AnyView returned
+    Router->>Router: Wrap in UIHostingController
+    Router->>UIKit: Resolve top navigation controller<br/>(check presented stack first)
+    Router->>UIKit: pushViewController(hostingVC,<br/>animated: true)
+    UIKit-->>VM: Settings screen visible
+
+    Note over App,VM: Flow 3: Modal Presentation with Detents
+
+    VM->>Dispatcher: send(.present(<br/>.profile(userId: "123"),<br/>style: .formSheet,<br/>detents: [.medium, .large],<br/>showDragIndicator: true))
+    Dispatcher->>Combine: subject.send(.present(...))
+    Combine-->>Router: ConduitAction received
+    Router->>Factory: makeView(for: .profile(userId: "123"))
+    Factory-->>Router: AnyView returned
+    Router->>Router: Wrap in UIHostingController
+    Router->>Router: Wrap in UINavigationController
+    Router->>Router: Configure sheetPresentationController<br/>— map ConduitDetent → UIKit detents<br/>— map ConduitPresentationStyle → UIKit style<br/>— set prefersGrabberVisible
+    Router->>UIKit: present(navController,<br/>animated: true)
+    Router->>Router: Track presented nav controller<br/>in presented stack
+    UIKit-->>VM: Modal sheet visible
+
+    Note over App,VM: Flow 4: Pop and Dismiss
+
+    VM->>Dispatcher: send(.pop)
+    Dispatcher->>Combine: subject.send(.pop)
+    Combine-->>Router: ConduitAction received
+    Router->>UIKit: Resolve top navigation controller
+    Router->>UIKit: popViewController(animated: true)
+    UIKit-->>VM: Previous screen restored
+
+    VM->>Dispatcher: send(.dismiss())
+    Dispatcher->>Combine: subject.send(.dismiss())
+    Combine-->>Router: ConduitAction received
+    Router->>UIKit: Resolve top presented controller
+    Router->>UIKit: dismiss(animated: true)
+    Router->>Router: Remove from presented stack
+    UIKit-->>VM: Modal dismissed
+
+    Note over App,VM: Flow 5: Tab Selection and Pop-to-Root
+
+    VM->>Dispatcher: send(.popToRootAndSelectTab(tabIndex: 0))
+    Dispatcher->>Combine: subject.send(.popToRootAndSelectTab(...))
+    Combine-->>Router: ConduitAction received
+    Router->>UIKit: Dismiss all presented controllers
+    Router->>Router: Clear presented stack
+    Router->>TabBar: selectedIndex = 0
+    Router->>UIKit: popToRootViewController(animated: false)<br/>on selected tab's nav controller
+    UIKit-->>VM: Home tab at root visible
+
+    Note over App,VM: Flow 6: Change Root — Sign Out
+
+    App->>Router: changeRoot(to: signInNavController)
+    Router->>Router: Dismiss all presented controllers
+    Router->>Router: Clear presented stack
+    Router->>Router: window.rootViewController = signInNavController
+    Router-->>App: Root replaced — sign-in screen visible
+
+    Note over App,VM: Flow 7: Bar Preferences
+
+    VM->>Dispatcher: send(.push(.settings,<br/>barPreferences: ConduitBarPreferences(<br/>isHidden: false,<br/>largeTitleDisplayMode: .always,<br/>hideTabBar: false)))
+    Dispatcher->>Combine: subject.send(.push(...))
+    Combine-->>Router: ConduitAction received
+    Router->>Factory: makeView(for: .settings)
+    Factory-->>Router: AnyView returned
+    Router->>Router: Configure hostingVC:<br/>— navigationItem.largeTitleDisplayMode<br/>— hidesBottomBarWhenPushed
+    Router->>UIKit: pushViewController(hostingVC,<br/>animated: true)
+    UIKit-->>VM: Settings with large title visible
