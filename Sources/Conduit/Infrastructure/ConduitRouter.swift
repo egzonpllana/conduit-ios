@@ -34,7 +34,6 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
     private var tabController: UITabBarController?
     private var rootNavigationController: UINavigationController?
     private var presentedNavStack: [UINavigationController] = []
-    private var isBound = false
 
     // MARK: - Initialization
 
@@ -50,6 +49,7 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
         self.dispatcher = dispatcher
         self.viewFactory = viewFactory
         self.rootNavigationController = UINavigationController()
+        bindDispatcher()
     }
 
     // MARK: - ConduitRouting
@@ -80,13 +80,11 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
             rootNavigationController = nav
             targetWindow?.rootViewController = nav
             targetWindow?.makeKeyAndVisible()
-            bindDispatcher()
             return
         }
 
         targetWindow?.rootViewController = viewController
         targetWindow?.makeKeyAndVisible()
-        bindDispatcher()
     }
 
     /// Updates the currently active window used by the router.
@@ -94,7 +92,6 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
     /// - Parameter window: The new `UIWindow` instance to track.
     public func updateActiveWindow(_ window: UIWindow) {
         self.activeWindow = window
-        bindDispatcher()
     }
 
     /// Assigns a tab bar controller for tab-based navigation.
@@ -109,9 +106,6 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
 
 private extension ConduitRouter {
     func bindDispatcher() {
-        guard isBound == false else { return }
-        isBound = true
-
         dispatcher.actionPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] action in
@@ -186,7 +180,7 @@ private extension ConduitRouter {
             }
         }
 
-        guard let rootVC = activeWindow?.rootViewController else {
+        guard let rootVC = activeWindow?.rootViewController ?? tabController else {
             logConduitError("No root view controller set.")
             return nil
         }
