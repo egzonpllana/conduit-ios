@@ -107,16 +107,30 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
 private extension ConduitRouter {
     func bindDispatcher() {
         dispatcher.actionPublisher
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] action in
-                guard let self else { return }
-                guard let navController = self.resolveActiveNavigationController() else {
-                    self.logConduitError("No active UINavigationController to perform navigation.")
-                    return
+                // Run synchronously when already on the main thread so the
+                // navigation animation can start in the same run-loop tick as
+                // the tap. Background-thread callers (Combine sinks, async
+                // tasks) still hop to main for UIKit safety.
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        self?.dispatchOnMain(action)
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        self?.dispatchOnMain(action)
+                    }
                 }
-                self.handle(action, using: navController)
             }
             .store(in: &cancellables)
+    }
+
+    func dispatchOnMain(_ action: ConduitAction<Factory.Destination>) {
+        guard let navController = resolveActiveNavigationController() else {
+            logConduitError("No active UINavigationController to perform navigation.")
+            return
+        }
+        handle(action, using: navController)
     }
 
     func handle(_ action: ConduitAction<Factory.Destination>, using navController: UINavigationController) {
