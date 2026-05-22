@@ -17,12 +17,81 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 | Version | Type | Highlights |
 |---------|------|-----------|
-| **2.0.1** | Patch | Promote `UIViewController.closestNavigationController()` from `internal` to `public` so consumer apps and app extensions can reuse it instead of duplicating the helper. |
+| **2.0.2** | Patch (docs) | Add **Concurrency & Sendability** section covering the four most common integration sharp edges (off-main dispatch, action-completion isolation, non-Sendable destination closures, app-extension restrictions). |
+| 2.0.1 | Patch | Promote `UIViewController.closestNavigationController()` from `internal` to `public` so consumer apps and app extensions can reuse it instead of duplicating the helper. |
 | **2.0.0** | Major | Navigation Tracking subsystem (`ConduitNavigationTracker`, events, history, context). New actions: `.openSafari(url)`, `.changeRoot(rootBuilder:, metadata:)`. New detent `.adaptiveHeight` with content measurement. `presentationBackground: Color?` on `.present`. Router walks top-most presenter and defers when mid-transition. `ConduitSheetDetentExpander` utility. **Breaking:** `.present` adds `presentationBackground`; `.popToRootAndSelectTab` adds `reason`. |
 | 1.0.3 | Patch | Run main-thread navigation actions synchronously to avoid one-frame push lag. |
 | 1.0.2 | Patch | Fix dispatcher binding to init; improve `topViewController` fallback. |
 | 1.0.1 | Patch | Fix main actor isolation error in `dismissAllPresentedViewControllers` completion. |
 | 1.0.0 | Major | Initial release — generic UIKit navigation framework for SwiftUI apps. |
+
+## Concurrency & Sendability
+
+Conduit leans on Swift 6 strict concurrency. The four things that surprise
+consumers most often:
+
+### 1. `ConduitDispatching` is `@MainActor`
+
+`send(_:)` and every method added via extensions on `ConduitDispatching` /
+`ConduitDispatcher` inherits `@MainActor` isolation. Calling them from an
+`async` function that isn't on the main actor (network interceptors,
+WebSocket callbacks, background tasks) crashes at runtime even when it
+compiles.
+
+```swift
+// Wrong — crashes if logoutUser is called off-main
+func logoutUser() async {
+    tokenRepository.clear()
+    dispatcher.navigateToSignInRoot()
+}
+
+// Right
+func logoutUser() async {
+    tokenRepository.clear()
+    await MainActor.run {
+        dispatcher.navigateToSignInRoot()
+    }
+}
+```
+
+### 2. Action completions are `@Sendable () -> Void`, not `@MainActor`
+
+`.dismiss(completion:)` and `.popToRootAndSelectTab(completion:)` declare
+their completions as `@Sendable () -> Void`. UIKit fires them on the main
+thread, but the compiler doesn't see that — so calling `@MainActor` work
+inside (a follow-up `.send`, a view-model method) is rejected.
+
+```swift
+// Right — assume isolation because UIKit guarantees main-thread firing
+dispatcher.send(.dismiss(completion: { [weak self] in
+    MainActor.assumeIsolated {
+        self?.presentNextScreen()
+    }
+}))
+```
+
+### 3. `ConduitDestination` requires `Sendable`
+
+Real destination enums often carry view-model parameters and SwiftUI
+callback closures that aren't `Sendable`. Conform with `@unchecked Sendable`
+and document the invariant — the dispatcher is `@MainActor`, so destination
+values never traverse actors in practice:
+
+```swift
+enum AppDestination: @unchecked Sendable, ConduitDestination {
+    case profile(viewModel: ProfileViewModel)
+    case confirm(onConfirm: () -> Void)
+}
+```
+
+### 4. App extensions can't use `UIApplication.shared`
+
+If your `CommonNavigationDispatching` (or similar) helper calls
+`UIApplication.shared.open(_:)` or `openSettingsURLString`, the conformance
+must live in a **main-target-only** file. Put the protocol definition in a
+shared file and the extension implementation in a main-only file
+(`extension ConduitDispatcher: @retroactive YourProtocol where Destination == ...`).
+Otherwise the share / widget / notification-service target fails to link.
 
 ## Components
 
