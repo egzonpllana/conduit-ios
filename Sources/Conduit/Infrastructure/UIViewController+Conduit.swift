@@ -8,7 +8,7 @@
 #if canImport(UIKit)
 import UIKit
 
-extension UIViewController {
+public extension UIViewController {
 
     /// Walks the entire presentation chain and finds the topmost visible `UINavigationController`.
     ///

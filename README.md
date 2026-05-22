@@ -17,6 +17,7 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 | Version | Type | Highlights |
 |---------|------|-----------|
+| **2.0.1** | Patch | Promote `UIViewController.closestNavigationController()` from `internal` to `public` so consumer apps and app extensions can reuse it instead of duplicating the helper. |
 | **2.0.0** | Major | Navigation Tracking subsystem (`ConduitNavigationTracker`, events, history, context). New actions: `.openSafari(url)`, `.changeRoot(rootBuilder:, metadata:)`. New detent `.adaptiveHeight` with content measurement. `presentationBackground: Color?` on `.present`. Router walks top-most presenter and defers when mid-transition. `ConduitSheetDetentExpander` utility. **Breaking:** `.present` adds `presentationBackground`; `.popToRootAndSelectTab` adds `reason`. |
 | 1.0.3 | Patch | Run main-thread navigation actions synchronously to avoid one-frame push lag. |
 | 1.0.2 | Patch | Fix dispatcher binding to init; improve `topViewController` fallback. |
