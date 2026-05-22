@@ -44,6 +44,11 @@ extension ConduitPresentationStyle {
 extension ConduitDetent {
 
     /// Maps the SDK detent to its UIKit sheet detent equivalent.
+    ///
+    /// `.adaptiveHeight` cannot resolve without measuring its hosting view, so
+    /// the mapping here falls back to `.medium()`. `ConduitRouter.handlePresent`
+    /// detects `.adaptiveHeight` and substitutes a measured `.custom` detent
+    /// before this default is used.
     var uiKit: UISheetPresentationController.Detent {
         switch self {
         case .medium:
@@ -56,6 +61,8 @@ extension ConduitDetent {
             return .custom { context in
                 context.maximumDetentValue * fraction
             }
+        case .adaptiveHeight:
+            return .medium()
         }
     }
 }

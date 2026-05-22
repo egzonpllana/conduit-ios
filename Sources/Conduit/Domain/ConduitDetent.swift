@@ -28,4 +28,10 @@ public enum ConduitDetent: Sendable {
     ///
     /// - Parameter fraction: A value between 0 and 1 representing the fraction.
     case fraction(CGFloat)
+
+    /// Height measured at present time via `UIHostingController.sizeThatFits`.
+    ///
+    /// `ConduitRouter` substitutes a concrete custom detent before configuring
+    /// the sheet. If pre-measurement fails, falls back to `.medium`.
+    case adaptiveHeight
 }

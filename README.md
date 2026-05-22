@@ -13,17 +13,70 @@ Conduit is a generic, protocol-driven UIKit navigation framework for SwiftUI app
 dispatcher.send(.push(.profile(userId: "123")))
 ```
 
+## Changelog
+
+| Version | Type | Highlights |
+|---------|------|-----------|
+| **2.0.0** | Major | Navigation Tracking subsystem (`ConduitNavigationTracker`, events, history, context). New actions: `.openSafari(url)`, `.changeRoot(rootBuilder:, metadata:)`. New detent `.adaptiveHeight` with content measurement. `presentationBackground: Color?` on `.present`. Router walks top-most presenter and defers when mid-transition. `ConduitSheetDetentExpander` utility. **Breaking:** `.present` adds `presentationBackground`; `.popToRootAndSelectTab` adds `reason`. |
+| 1.0.3 | Patch | Run main-thread navigation actions synchronously to avoid one-frame push lag. |
+| 1.0.2 | Patch | Fix dispatcher binding to init; improve `topViewController` fallback. |
+| 1.0.1 | Patch | Fix main actor isolation error in `dismissAllPresentedViewControllers` completion. |
+| 1.0.0 | Major | Initial release — generic UIKit navigation framework for SwiftUI apps. |
+
+## Components
+
+### Core Protocols
+| Component | What it is |
+|-----------|------------|
+| `ConduitDestination` | Marker protocol your destination enum conforms to. |
+| `ConduitDispatching` | Sends and publishes `ConduitAction` values. |
+| `ConduitRouting` | Router lifecycle: `changeRoot`, `updateActiveWindow`. |
+| `ConduitViewFactory` | Resolves a destination into a SwiftUI view. |
+| `ConduitTabConfiguring` | Supplies the tab items for `ConduitTabBarController`. |
+
+### Domain Models (UIKit-free)
+| Component | What it is |
+|-----------|------------|
+| `ConduitAction<Destination>` | Generic navigation command (`.push`, `.present`, `.pop`, `.dismiss`, `.changeRoot`, `.openSafari`, `.selectTab`, ...). |
+| `ConduitBarPreferences` | Navigation-bar visibility, large-title mode, tab-bar hiding. |
+| `ConduitDetent` | Sheet detents: `.medium`, `.large`, `.custom`, `.fraction`, `.adaptiveHeight`. |
+| `ConduitPresentationStyle` | Modal styles mapped to `UIModalPresentationStyle`. |
+| `ConduitLargeTitleDisplayMode` | Large-title preference for pushed and presented screens. |
+| `ConduitRootChangeMetadata` | Optional metadata attached to `.changeRoot` for tracker consumers. |
+| `ConduitTabItem` | Title + icon + root view + index for a tab bar tab. |
+
+### Infrastructure (UIKit)
+| Component | What it is |
+|-----------|------------|
+| `ConduitDispatcher<Destination>` | Combine `PassthroughSubject`-backed dispatcher. |
+| `ConduitRouter<Factory>` | Core engine: translates actions into UIKit transitions, walks the top-most presenter, defers when mid-transition. |
+| `ConduitTabBarController` | Generic `UITabBarController` built from a `ConduitTabConfiguring`. |
+| `ConduitSheetDetentExpander` | Promote the top-most sheet to `.large` or pin to a custom height. |
+| `ConduitWindowUtils` | Active key-window and top-view-controller lookups. |
+
+### Tracking (added in 2.0.0)
+| Component | What it is |
+|-----------|------------|
+| `ConduitNavigatedScreen` | Marker protocol your trackable screen enum conforms to. |
+| `ConduitNavigationContext` | Free-form key/value bag attached to every stack entry. |
+| `ConduitNavigationEvent<Screen>` | Generic event enum carrying analytics identifiers. |
+| `ConduitNavigationHistoryEntry<Screen>` | Single ordered history record. |
+| `ConduitNavigationTracking` | Tracker protocol: stacks, history, publishers. |
+| `ConduitNavigationTracker<Destination, Screen>` | Concrete generic tracker observing the dispatcher. |
+
 ## Features
 
 - **Generic Destinations** -- Define your own destination enum; the router resolves views through your factory.
 - **Combine Dispatcher** -- View models send actions; the router subscribes and executes UIKit transitions.
-- **Full UIKit Navigation** -- Push, present (sheets, fullscreen, custom detents), pop, dismiss, tab selection.
-- **Protocol-Driven** -- Inject `ConduitDispatching`, `ConduitRouting`, and `ConduitViewFactory` for full testability.
-- **Presented Stack Management** -- Tracks modally presented navigation controllers for correct resolution.
+- **Full UIKit Navigation** -- Push, present (sheets, fullscreen, custom detents), pop, dismiss, tab selection, Safari, root swaps.
+- **Protocol-Driven** -- Inject `ConduitDispatching`, `ConduitRouting`, `ConduitViewFactory`, and `ConduitNavigationTracking` for full testability.
+- **Top-Most Presenter Resolution** -- Walks the `presentedViewController` chain and defers when a presenter is mid-transition, avoiding UIKit's "already presenting" warnings.
+- **Adaptive Sheet Heights** -- `ConduitDetent.adaptiveHeight` measures the SwiftUI content at present time and pins the sheet to it.
 - **Configurable Tab Bar** -- Generic `ConduitTabBarController` built from `ConduitTabItem` arrays.
+- **Navigation Tracking** -- `ConduitNavigationTracker` observes the dispatcher and maintains per-tab stacks, modal stacks, and an analytics-ready history log.
 - **UIKit-Free Domain** -- Presentation styles, detents, and bar preferences are SDK enums mapped internally.
 - **Swift 6 Ready** -- `@MainActor` isolation, `Sendable` conformance, zero concurrency warnings.
-- **Zero Dependencies** -- Built entirely on Combine, UIKit, and SwiftUI.
+- **Zero Dependencies** -- Built entirely on Combine, UIKit, SwiftUI, and SafariServices.
 
 ## Architecture
 
@@ -69,13 +122,22 @@ Sources/Conduit/
 │   ├── ConduitBarPreferences.swift     ← Nav bar configuration
 │   ├── ConduitDetent.swift             ← Sheet presentation detents
 │   ├── ConduitPresentationStyle.swift  ← Modal presentation styles
+│   ├── ConduitRootChangeMetadata.swift ← Metadata for .changeRoot actions
 │   └── ConduitTabItem.swift            ← Tab item configuration
-└── Infrastructure/
-    ├── ConduitDispatcher.swift          ← PassthroughSubject-based dispatcher
-    ├── ConduitRouter.swift             ← Core router: actions → UIKit navigation
-    ├── ConduitTabBarController.swift   ← Generic configurable tab bar
-    ├── UIViewController+Conduit.swift  ← Navigation controller resolution
-    └── ConduitWindowUtils.swift        ← Active window lookup
+├── Infrastructure/
+│   ├── ConduitDispatcher.swift          ← PassthroughSubject-based dispatcher
+│   ├── ConduitRouter.swift             ← Core router: actions → UIKit navigation
+│   ├── ConduitTabBarController.swift   ← Generic configurable tab bar
+│   ├── ConduitSheetDetentExpander.swift ← Promote top sheet to large / custom height
+│   ├── UIViewController+Conduit.swift  ← Navigation controller resolution
+│   └── ConduitWindowUtils.swift        ← Active window lookup
+└── Tracking/
+    ├── ConduitNavigatedScreen.swift              ← Marker protocol for trackable screens
+    ├── ConduitNavigationContext.swift            ← Free-form key/value context bag
+    ├── ConduitNavigationEvent.swift              ← Generic event enum with analytics IDs
+    ├── ConduitNavigationHistoryEntry.swift       ← Single history record
+    ├── ConduitNavigationTracking.swift           ← Tracker protocol
+    └── ConduitNavigationTracker.swift            ← Concrete generic tracker
 ```
 
 ## Installation
@@ -204,13 +266,15 @@ func signOut(router: any ConduitRouting) {
 | Action | Description |
 |--------|-------------|
 | `.push(destination)` | Push onto current navigation stack |
-| `.present(destination, style:, detents:, ...)` | Present modally with sheet configuration |
+| `.present(destination, style:, detents:, presentationBackground:, ...)` | Present modally with sheet configuration and optional background color |
+| `.openSafari(url)` | Present `SFSafariViewController` on the top-most presenter |
 | `.pop` | Pop top view controller |
 | `.popMultiple(count:)` | Pop multiple view controllers |
 | `.popToRoot` | Pop to root of current stack |
-| `.dismiss()` | Dismiss top presented modal |
+| `.dismiss()` | Dismiss top presented modal (with top-most-presenter fallback) |
+| `.changeRoot(rootBuilder:, metadata:)` | Swap `window.rootViewController`; the closure builds the new root on `MainActor` |
 | `.selectTab(index)` | Select a tab bar tab |
-| `.popToRootAndSelectTab(tabIndex:)` | Reset all stacks and select tab |
+| `.popToRootAndSelectTab(tabIndex:, reason:)` | Reset all stacks and select tab |
 
 ### Bar Preferences
 
@@ -226,6 +290,141 @@ dispatcher.send(.push(
 ))
 ```
 
+### Adaptive Sheet Heights
+
+When a sheet should hug its SwiftUI content (e.g., a short form), pass
+`.adaptiveHeight`. The router pre-measures the hosting controller via
+`sizeThatFits` and substitutes a `.custom` detent before presenting:
+
+```swift
+dispatcher.send(.present(
+    .quickEditor,
+    style: .pageSheet,
+    detents: [.adaptiveHeight],
+    showDragIndicator: true
+))
+```
+
+To grow an already-presented sheet (for example, when a text field gains
+focus), call `ConduitSheetDetentExpander`:
+
+```swift
+ConduitSheetDetentExpander.expandToLarge()
+// or pin to a measured height
+ConduitSheetDetentExpander.setCustomHeight(420)
+```
+
+### Open Safari
+
+```swift
+dispatcher.send(.openSafari(URL(string: "https://example.com")!))
+```
+
+`ConduitRouter` presents `SFSafariViewController` on the top-most presenter so
+it stacks correctly on top of any active modal. Dismiss with the standard
+`.dismiss()` action.
+
+### Change Root via Action
+
+`changeRoot` is available both as a direct router method (for cases that need
+to pass a window explicitly) and as a `ConduitAction` that flows through the
+dispatcher. Using the action lets tracker subscribers see the swap:
+
+```swift
+dispatcher.send(.changeRoot(
+    rootBuilder: {
+        let signIn = UIHostingController(rootView: SignInView())
+        return UINavigationController(rootViewController: signIn)
+    },
+    metadata: .init(
+        rootName: "sign_in",
+        reason: "user_signed_out",
+        resetsTabStacks: false
+    )
+))
+```
+
+## Navigation Tracking
+
+`ConduitNavigationTracker` observes the dispatcher and maintains per-tab
+navigation stacks, a modal stack, and a chronological history log keyed by
+order. Subscribe to its publishers for analytics, deep-link routing, or
+"where is the user right now?" decisions.
+
+### 1. Conform Your Screen Enum
+
+```swift
+enum AppScreen: String, ConduitNavigatedScreen {
+    case home, feed, settings, profile, eventDetails, unknown
+
+    var analyticsIdentifier: String { rawValue }
+}
+```
+
+### 2. Create the Tracker
+
+```swift
+let tracker = ConduitNavigationTracker<AppDestination, AppScreen>(
+    dispatcher: dispatcher,
+    initialTabScreens: [
+        0: .home,
+        1: .feed,
+        2: .settings
+    ],
+    defaultSelectedTabIndex: 1,
+    unknownScreen: .unknown,
+    resolveScreen: { destination in
+        switch destination {
+        case .profile: return .profile
+        case .eventDetails: return .eventDetails
+        default: return .unknown
+        }
+    },
+    resolveContext: { destination in
+        switch destination {
+        case let .eventDetails(eventId, pocketId):
+            return ConduitNavigationContext(values: [
+                "eventId": eventId,
+                "pocketId": pocketId
+            ])
+        default:
+            return .empty
+        }
+    },
+    analyticsPrefix: "myapp_navigation_"
+)
+```
+
+### 3. Use the Tracker
+
+```swift
+// Forward tab-bar selections from your tab delegate
+func tabBarController(_ controller: UITabBarController, didSelect: UIViewController) {
+    tracker.trackTabSelection(controller.selectedIndex)
+}
+
+// Read current state
+let screen = tracker.currentScreen
+let depth = tracker.navigationDepth
+let isRoot = tracker.isAtRootScreen
+
+// Smart navigation: only push when not already there
+if tracker.currentContext["eventId"] != targetEventId {
+    dispatcher.send(.push(.eventDetails(eventId: targetEventId, pocketId: pocketId)))
+}
+
+// Subscribe to events for analytics
+tracker.navigationEventPublisher
+    .sink { event in
+        analytics.record(name: event.analyticsIdentifier(prefix: "myapp_navigation_"))
+    }
+    .store(in: &cancellables)
+
+// Query history
+let pushes = tracker.navigationEntries(matching: "myapp_navigation_pushed")
+let visitsToProfile = tracker.navigationEntries(toScreen: .profile)
+```
+
 ## API Reference
 
 ### Core Protocols
@@ -237,6 +436,8 @@ dispatcher.send(.push(
 | `ConduitDispatching` | Navigation action publisher and sender |
 | `ConduitRouting` | Router lifecycle: start, updateWindow, changeRoot |
 | `ConduitTabConfiguring` | Tab bar item definition protocol |
+| `ConduitNavigatedScreen` | Marker protocol for trackable screen enums |
+| `ConduitNavigationTracking` | Tracker protocol: stacks, history, publishers |
 
 ### Domain Models
 
@@ -244,9 +445,10 @@ dispatcher.send(.push(
 |------|-------------|
 | `ConduitAction<Destination>` | Generic navigation command enum |
 | `ConduitBarPreferences` | Navigation bar visibility and title configuration |
-| `ConduitDetent` | Sheet detents: `.medium`, `.large`, `.custom(CGFloat)`, `.fraction(CGFloat)` |
+| `ConduitDetent` | Sheet detents: `.medium`, `.large`, `.custom(CGFloat)`, `.fraction(CGFloat)`, `.adaptiveHeight` |
 | `ConduitPresentationStyle` | Modal styles: `.pageSheet`, `.formSheet`, `.fullScreen`, `.overFullScreen` |
 | `ConduitLargeTitleDisplayMode` | Title modes: `.automatic`, `.always`, `.never` |
+| `ConduitRootChangeMetadata` | Optional metadata attached to `.changeRoot` actions |
 | `ConduitTabItem` | Tab configuration: title, icon, root view controller, index |
 
 ### Infrastructure
@@ -256,7 +458,17 @@ dispatcher.send(.push(
 | `ConduitDispatcher<Destination>` | Combine-based `@MainActor` dispatcher |
 | `ConduitRouter<Factory>` | Core router translating actions to UIKit navigation |
 | `ConduitTabBarController` | Generic tab bar built from `ConduitTabItem` arrays |
+| `ConduitSheetDetentExpander` | Promote the top-most sheet to `.large` or a custom height |
 | `ConduitWindowUtils` | Active key window lookup |
+
+### Tracking
+
+| Type | Description |
+|------|-------------|
+| `ConduitNavigationTracker<Destination, Screen>` | Concrete generic tracker observing the dispatcher |
+| `ConduitNavigationEvent<Screen>` | Generic event enum (pushed, presented, popped, dismissed, tabSwitched, rootChanged, ...) |
+| `ConduitNavigationContext` | Free-form key/value bag attached to each stack entry |
+| `ConduitNavigationHistoryEntry<Screen>` | Recorded history row with order, event, timestamp, and analytics ID |
 
 ## Requirements
 

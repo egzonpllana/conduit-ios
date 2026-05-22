@@ -10,6 +10,10 @@ import UIKit
 import SwiftUI
 import Combine
 
+#if canImport(SafariServices)
+import SafariServices
+#endif
+
 /// The core navigation router that translates `ConduitAction` values into UIKit operations.
 ///
 /// `ConduitRouter` subscribes to a dispatcher's action publisher and performs
@@ -126,57 +130,76 @@ private extension ConduitRouter {
     }
 
     func dispatchOnMain(_ action: ConduitAction<Factory.Destination>) {
-        guard let navController = resolveActiveNavigationController() else {
-            logConduitError("No active UINavigationController to perform navigation.")
-            return
-        }
-        handle(action, using: navController)
-    }
-
-    func handle(_ action: ConduitAction<Factory.Destination>, using navController: UINavigationController) {
         switch action {
         case let .push(destination, barPreferences):
+            guard let navController = resolveActiveNavigationController() else {
+                logConduitError("No active UINavigationController to perform push.")
+                return
+            }
             handlePush(destination, using: navController, preferences: barPreferences)
 
-        case let .present(destination, style, isModalInPresentation, detents, preferredHeight, showDragIndicator, barPreferences, animated):
+        case let .present(
+            destination,
+            style,
+            isModalInPresentation,
+            detents,
+            preferredHeight,
+            showDragIndicator,
+            presentationBackground,
+            barPreferences,
+            animated
+        ):
             handlePresent(
                 destination,
-                using: navController,
                 style: style,
                 isModalInPresentation: isModalInPresentation,
                 detents: detents,
                 preferredHeight: preferredHeight,
                 showDragIndicator: showDragIndicator,
+                presentationBackground: presentationBackground,
                 preferences: barPreferences,
                 animated: animated
             )
 
+        #if canImport(SafariServices)
+        case let .openSafari(url):
+            handleOpenSafari(url: url)
+        #endif
+
         case .pop:
+            guard let navController = resolveActiveNavigationController() else {
+                logConduitError("No active UINavigationController to perform pop.")
+                return
+            }
             navController.popViewController(animated: true)
 
         case let .popMultiple(count, animated):
+            guard let navController = resolveActiveNavigationController() else {
+                logConduitError("No active UINavigationController to perform popMultiple.")
+                return
+            }
             let viewControllers = navController.viewControllers
-            guard count > 0, count < viewControllers.count else { break }
+            guard count > 0, count < viewControllers.count else { return }
             let targetIndex = viewControllers.count - count - 1
             navController.popToViewController(viewControllers[targetIndex], animated: animated)
 
         case .popToRoot:
+            guard let navController = resolveActiveNavigationController() else {
+                logConduitError("No active UINavigationController to perform popToRoot.")
+                return
+            }
             navController.popToRootViewController(animated: true)
 
         case let .dismiss(animated, completion):
-            if let topPresented = presentedNavStack.last {
-                topPresented.dismiss(animated: animated) { [weak self] in
-                    if let self, !self.presentedNavStack.isEmpty {
-                        self.presentedNavStack.removeLast()
-                    }
-                    completion?()
-                }
-            }
+            handleDismiss(animated: animated, completion: completion)
+
+        case let .changeRoot(rootBuilder, _):
+            handleChangeRoot(builder: rootBuilder)
 
         case let .selectTab(tabIndex):
             handleSelectTab(tabIndex)
 
-        case let .popToRootAndSelectTab(tabIndex, completion):
+        case let .popToRootAndSelectTab(tabIndex, _, completion):
             handlePopToRootAndSelectTab(tabIndex: tabIndex, completion: completion)
         }
     }
@@ -185,6 +208,30 @@ private extension ConduitRouter {
 // MARK: - Navigation Helpers
 
 private extension ConduitRouter {
+
+    /// Walks the `presentedViewController` chain to find the top-most VC that
+    /// can issue a `present(_:animated:)` call. Without this, UIKit logs
+    /// "Attempt to present <X> on <Y> which is already presenting <Z>" and the
+    /// new modal never appears.
+    func topMostPresenter(from root: UIViewController) -> UIViewController {
+        var current = root
+        while let next = current.presentedViewController {
+            current = next
+        }
+        return current
+    }
+
+    /// Returns `true` when the top-most presenter is mid-transition and a
+    /// `present`/`dismiss` issued right now would be dropped by UIKit.
+    func isPresenterTransitioning(_ presenter: UIViewController) -> Bool {
+        presenter.isBeingPresented
+            || presenter.isBeingDismissed
+            || presenter.transitionCoordinator != nil
+    }
+
+    /// Resolves the active navigation controller used as the base for push/pop.
+    /// Walks any orphaned entries off `presentedNavStack` whose view is no
+    /// longer in the window hierarchy.
     func resolveActiveNavigationController() -> UINavigationController? {
         while let top = presentedNavStack.last {
             if top.view.window != nil {
@@ -197,6 +244,17 @@ private extension ConduitRouter {
         guard let rootVC = activeWindow?.rootViewController ?? tabController else {
             logConduitError("No root view controller set.")
             return nil
+        }
+
+        // If a native modal (e.g. SwiftUI `.sheet`) is on top of the tab/root
+        // and contains a navigation controller, push into that one so we don't
+        // break the user's modal context.
+        let resolvedTop = topMostPresenter(from: rootVC)
+        if let nav = resolvedTop as? UINavigationController {
+            return nav
+        }
+        if let nav = resolvedTop.closestNavigationController() {
+            return nav
         }
 
         if let tabBar = rootVC as? UITabBarController,
@@ -223,36 +281,166 @@ private extension ConduitRouter {
 
     func handlePresent(
         _ destination: Factory.Destination,
-        using navController: UINavigationController,
         style: ConduitPresentationStyle,
         isModalInPresentation: Bool,
         detents: [ConduitDetent]?,
         preferredHeight: CGFloat?,
         showDragIndicator: Bool,
+        presentationBackground: Color?,
         preferences: ConduitBarPreferences,
         animated: Bool
     ) {
+        guard let rootVC = activeWindow?.rootViewController else {
+            logConduitError("No root view controller — cannot present.")
+            return
+        }
+
+        let presenter = topMostPresenter(from: rootVC)
+
+        // If the presenter is mid-transition, requeue on the next run-loop tick.
+        if isPresenterTransitioning(presenter) {
+            DispatchQueue.main.async { [weak self] in
+                self?.handlePresent(
+                    destination,
+                    style: style,
+                    isModalInPresentation: isModalInPresentation,
+                    detents: detents,
+                    preferredHeight: preferredHeight,
+                    showDragIndicator: showDragIndicator,
+                    presentationBackground: presentationBackground,
+                    preferences: preferences,
+                    animated: animated
+                )
+            }
+            return
+        }
+
         let view = viewFactory.makeView(destination)
         let hostingController = UIHostingController(rootView: view)
         hostingController.navigationItem.largeTitleDisplayMode = preferences.largeTitleDisplayMode.uiKit
         hostingController.restorationIdentifier = viewFactory.makeIdentifier(destination)
+
+        if let backgroundColor = presentationBackground.flatMap({ UIColor($0) }) {
+            hostingController.view.backgroundColor = backgroundColor
+        }
 
         let wrappedNav = UINavigationController(rootViewController: hostingController)
         wrappedNav.modalPresentationStyle = style.uiKit
         wrappedNav.isModalInPresentation = isModalInPresentation
         wrappedNav.setNavigationBarHidden(preferences.isHidden, animated: false)
 
-        if let sheet = wrappedNav.sheetPresentationController {
-            if let detents, !detents.isEmpty {
-                sheet.detents = detents.map { $0.uiKit }
-            } else if let height = preferredHeight {
-                sheet.detents = [.custom { _ in height }]
-            }
-            sheet.prefersGrabberVisible = showDragIndicator
+        if let backgroundColor = presentationBackground.flatMap({ UIColor($0) }) {
+            wrappedNav.view.backgroundColor = backgroundColor
         }
 
-        navController.present(wrappedNav, animated: animated)
+        configureSheetIfNeeded(
+            wrappedNav: wrappedNav,
+            hostingController: hostingController,
+            detents: detents,
+            preferredHeight: preferredHeight,
+            showDragIndicator: showDragIndicator
+        )
+
+        presenter.present(wrappedNav, animated: animated)
         presentedNavStack.append(wrappedNav)
+    }
+
+    func configureSheetIfNeeded(
+        wrappedNav: UINavigationController,
+        hostingController: UIHostingController<AnyView>,
+        detents: [ConduitDetent]?,
+        preferredHeight: CGFloat?,
+        showDragIndicator: Bool
+    ) {
+        guard let sheet = wrappedNav.sheetPresentationController else { return }
+
+        if let detents, !detents.isEmpty {
+            let containsAdaptive = detents.contains { detent in
+                if case .adaptiveHeight = detent { return true } else { return false }
+            }
+            if containsAdaptive {
+                let targetWidth = activeWindow?.bounds.width ?? UIScreen.main.bounds.width
+                let measured = hostingController.sizeThatFits(
+                    in: CGSize(width: targetWidth, height: .greatestFiniteMagnitude)
+                )
+                let resolvedHeight = max(measured.height, 1)
+                sheet.detents = detents.map { detent in
+                    switch detent {
+                    case .adaptiveHeight:
+                        return .custom { _ in resolvedHeight }
+                    default:
+                        return detent.uiKit
+                    }
+                }
+            } else {
+                sheet.detents = detents.map { $0.uiKit }
+            }
+        } else if let height = preferredHeight {
+            sheet.detents = [.custom { _ in height }]
+        }
+
+        sheet.prefersGrabberVisible = showDragIndicator
+    }
+
+    #if canImport(SafariServices)
+    func handleOpenSafari(url: URL) {
+        guard let rootVC = activeWindow?.rootViewController else {
+            logConduitError("No root view controller — cannot present Safari.")
+            return
+        }
+
+        let presenter = topMostPresenter(from: rootVC)
+        if isPresenterTransitioning(presenter) {
+            DispatchQueue.main.async { [weak self] in
+                self?.handleOpenSafari(url: url)
+            }
+            return
+        }
+
+        let safariVC = SFSafariViewController(url: url)
+        safariVC.modalPresentationStyle = .pageSheet
+        presenter.present(safariVC, animated: true)
+    }
+    #endif
+
+    func handleDismiss(animated: Bool, completion: (@Sendable () -> Void)?) {
+        // Prefer the tracked modal nav stack so dismiss order stays predictable.
+        if let topPresented = presentedNavStack.last {
+            topPresented.dismiss(animated: animated) { [weak self] in
+                if let self, !self.presentedNavStack.isEmpty {
+                    self.presentedNavStack.removeLast()
+                }
+                completion?()
+            }
+            return
+        }
+
+        // Fallback: dismiss whatever is on top (e.g. Safari, system pickers
+        // that bypass `presentedNavStack`).
+        guard let rootVC = activeWindow?.rootViewController else {
+            completion?()
+            return
+        }
+        let presenter = topMostPresenter(from: rootVC)
+        if presenter === rootVC {
+            completion?()
+            return
+        }
+        presenter.dismiss(animated: animated, completion: completion)
+    }
+
+    func handleChangeRoot(builder: @MainActor @Sendable () -> UIViewController) {
+        // Dismiss every tracked modal before swapping the root.
+        if let oldRoot = activeWindow?.rootViewController {
+            oldRoot.dismiss(animated: false)
+        }
+        presentedNavStack.removeAll()
+        tabController = nil
+        rootNavigationController?.setViewControllers([], animated: false)
+        rootNavigationController = nil
+
+        let newRoot = builder()
+        changeRoot(to: newRoot, in: activeWindow)
     }
 
     func handleSelectTab(_ tabIndex: Int) {

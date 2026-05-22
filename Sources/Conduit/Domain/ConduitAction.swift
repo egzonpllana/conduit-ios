@@ -6,6 +6,11 @@
 //
 
 import Foundation
+import SwiftUI
+
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Represents navigation commands dispatched through the Conduit framework.
 ///
@@ -17,7 +22,7 @@ import Foundation
 /// dispatcher.send(.present(.settings, style: .pageSheet, detents: [.medium, .large]))
 /// dispatcher.send(.pop)
 /// ```
-public enum ConduitAction<Destination: ConduitDestination>: Sendable {
+public enum ConduitAction<Destination: ConduitDestination>: @unchecked Sendable {
 
     /// Pushes a destination onto the navigation stack.
     ///
@@ -38,6 +43,8 @@ public enum ConduitAction<Destination: ConduitDestination>: Sendable {
     ///   - detents: Sheet detent sizes for page/form sheet styles.
     ///   - preferredHeight: Fallback fixed height when detents are not provided.
     ///   - showDragIndicator: Whether to show the sheet grabber.
+    ///   - presentationBackground: Optional background color applied to the
+    ///     hosting view and its wrapping navigation controller.
     ///   - barPreferences: Navigation bar configuration for the presented view.
     ///   - animated: Whether the presentation is animated.
     case present(
@@ -47,9 +54,17 @@ public enum ConduitAction<Destination: ConduitDestination>: Sendable {
         detents: [ConduitDetent]? = nil,
         preferredHeight: CGFloat? = nil,
         showDragIndicator: Bool = false,
+        presentationBackground: Color? = nil,
         barPreferences: ConduitBarPreferences = .init(isHidden: true),
         animated: Bool = true
     )
+
+    #if canImport(SafariServices)
+    /// Presents `SFSafariViewController` for the given URL on the top-most
+    /// presenter. The Safari controller lives outside the navigation stack and
+    /// is dismissed via the standard `.dismiss` action.
+    case openSafari(URL)
+    #endif
 
     /// Pops the top view controller from the navigation stack.
     case pop
@@ -71,6 +86,24 @@ public enum ConduitAction<Destination: ConduitDestination>: Sendable {
     ///   - completion: Closure called after the dismissal completes.
     case dismiss(animated: Bool = true, completion: (@Sendable () -> Void)? = nil)
 
+    #if canImport(UIKit)
+    /// Replaces the active window's root view controller.
+    ///
+    /// The closure builds the new root so app-specific view creation stays
+    /// out of the SDK. `ConduitRouter` dismisses any modals, clears its
+    /// presented-nav stack, then swaps the root and calls `makeKeyAndVisible()`.
+    ///
+    /// - Parameters:
+    ///   - rootBuilder: Closure that returns the new root view controller.
+    ///     Executed on `MainActor`.
+    ///   - metadata: Optional metadata consumed by tracker subscribers. Pass a
+    ///     root name and reason so navigation analytics can record the swap.
+    case changeRoot(
+        rootBuilder: @MainActor @Sendable () -> UIViewController,
+        metadata: ConduitRootChangeMetadata = .init()
+    )
+    #endif
+
     /// Selects a specific tab in the tab bar controller.
     ///
     /// - Parameter tabIndex: The zero-based index of the tab to select.
@@ -83,6 +116,12 @@ public enum ConduitAction<Destination: ConduitDestination>: Sendable {
     ///
     /// - Parameters:
     ///   - tabIndex: The zero-based index of the tab to select.
+    ///   - reason: Optional free-form reason consumed by tracker subscribers
+    ///     (e.g. `"notification_tap"`, `"deep_link"`).
     ///   - completion: Optional closure called after navigation completes.
-    case popToRootAndSelectTab(tabIndex: Int, completion: (@Sendable () -> Void)? = nil)
+    case popToRootAndSelectTab(
+        tabIndex: Int,
+        reason: String = "",
+        completion: (@Sendable () -> Void)? = nil
+    )
 }
