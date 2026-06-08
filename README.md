@@ -17,6 +17,7 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 | Version | Type | Highlights |
 |---------|------|-----------|
+| **2.0.3** | Patch (docs) | Add **Dependency Injection & Dynamic Casts (iOS 18)** section: resolving `any ConduitDispatching<…>` / `any ConduitNavigationTracking<…>` through an `as?`-based DI container crashes on iOS 18 (parameterized-existential cast returns nil); use a plain app protocol or the concrete type at the DI boundary. |
 | **2.0.2** | Patch (docs) | Add **Concurrency & Sendability** section covering the four most common integration sharp edges (off-main dispatch, action-completion isolation, non-Sendable destination closures, app-extension restrictions). |
 | 2.0.1 | Patch | Promote `UIViewController.closestNavigationController()` from `internal` to `public` so consumer apps and app extensions can reuse it instead of duplicating the helper. |
 | **2.0.0** | Major | Navigation Tracking subsystem (`ConduitNavigationTracker`, events, history, context). New actions: `.openSafari(url)`, `.changeRoot(rootBuilder:, metadata:)`. New detent `.adaptiveHeight` with content measurement. `presentationBackground: Color?` on `.present`. Router walks top-most presenter and defers when mid-transition. `ConduitSheetDetentExpander` utility. **Breaking:** `.present` adds `presentationBackground`; `.popToRootAndSelectTab` adds `reason`. |
@@ -92,6 +93,41 @@ must live in a **main-target-only** file. Put the protocol definition in a
 shared file and the extension implementation in a main-only file
 (`extension ConduitDispatcher: @retroactive YourProtocol where Destination == ...`).
 Otherwise the share / widget / notification-service target fails to link.
+
+## Dependency Injection & Dynamic Casts (iOS 18)
+
+`ConduitDispatching<Destination>` and `ConduitNavigationTracking<Destination, Screen>`
+are *parameterized protocols*. Using them by value or via constructor injection is
+safe. **But the Swift runtime on iOS 18 (and earlier) mishandles dynamic casts
+(`as?` / `as!`) to a parameterized existential** such as
+`any ConduitDispatching<AppDestination>`: the cast returns `nil` even when the value
+conforms. The same code works on iOS 26+, which ships a fixed runtime.
+
+This bites type-erased dependency-injection containers, which store instances as
+`Any` and cast them back with `as?`. Resolving `any ConduitDispatching<AppDestination>`
+that way crashes on iOS 18 — typically as an "unexpectedly found nil" trap inside the
+container, at the first resolution during launch.
+
+**Do not** register/resolve `any ConduitDispatching<…>` or
+`any ConduitNavigationTracking<…>` through an `as?`-based container.
+**Instead**, at the DI boundary use either:
+
+- a **plain (non-parameterized) protocol** your app owns, with a conditional
+  conformance on the concrete Conduit type:
+
+  ```swift
+  @MainActor
+  protocol AppNavigating: AnyObject {
+      var actionPublisher: AnyPublisher<ConduitAction<AppDestination>, Never> { get }
+      func send(_ action: ConduitAction<AppDestination>)
+  }
+
+  extension ConduitDispatcher: AppNavigating where Destination == AppDestination {}
+  ```
+
+- or the **concrete type** `ConduitDispatcher<AppDestination>`.
+
+Casts to a plain existential or a concrete class are reliable on all runtimes.
 
 ## Components
 
