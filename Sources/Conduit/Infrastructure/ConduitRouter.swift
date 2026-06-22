@@ -33,6 +33,7 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
 
     private let dispatcher: any ConduitDispatching<Factory.Destination>
     private let viewFactory: Factory
+    private let defaultPresentationBackground: Color?
     private var cancellables = Set<AnyCancellable>()
     private var activeWindow: UIWindow?
     private var tabController: UITabBarController?
@@ -46,14 +47,36 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
     /// - Parameters:
     ///   - dispatcher: The dispatcher to subscribe to for navigation actions.
     ///   - viewFactory: The factory that builds views for each destination.
+    ///   - defaultPresentationBackground: App-wide fallback background color
+    ///     applied to presented hosts when a `.present` action does not
+    ///     specify its own `presentationBackground`. Defaults to `nil`, which
+    ///     preserves the system background. Set this once to give every modal a
+    ///     consistent background without supplying it at each call site.
     public init(
         dispatcher: any ConduitDispatching<Factory.Destination>,
-        viewFactory: Factory
+        viewFactory: Factory,
+        defaultPresentationBackground: Color? = nil
     ) {
         self.dispatcher = dispatcher
         self.viewFactory = viewFactory
+        self.defaultPresentationBackground = defaultPresentationBackground
         self.rootNavigationController = UINavigationController()
         bindDispatcher()
+    }
+
+    // MARK: - Presentation Background
+
+    /// Resolves the background applied to a presented host.
+    ///
+    /// An explicit per-action `presentationBackground` always takes
+    /// precedence; the router-wide default is used only when the action does
+    /// not specify one. Returns `nil` when neither is provided, leaving the
+    /// system background untouched.
+    static func resolvePresentationBackground(
+        explicit: Color?,
+        default defaultBackground: Color?
+    ) -> Color? {
+        explicit ?? defaultBackground
     }
 
     // MARK: - ConduitRouting
@@ -320,7 +343,12 @@ private extension ConduitRouter {
         hostingController.navigationItem.largeTitleDisplayMode = preferences.largeTitleDisplayMode.uiKit
         hostingController.restorationIdentifier = viewFactory.makeIdentifier(destination)
 
-        if let backgroundColor = presentationBackground.flatMap({ UIColor($0) }) {
+        let resolvedBackground = Self.resolvePresentationBackground(
+            explicit: presentationBackground,
+            default: defaultPresentationBackground
+        )
+
+        if let backgroundColor = resolvedBackground.flatMap({ UIColor($0) }) {
             hostingController.view.backgroundColor = backgroundColor
         }
 
@@ -329,7 +357,7 @@ private extension ConduitRouter {
         wrappedNav.isModalInPresentation = isModalInPresentation
         wrappedNav.setNavigationBarHidden(preferences.isHidden, animated: false)
 
-        if let backgroundColor = presentationBackground.flatMap({ UIColor($0) }) {
+        if let backgroundColor = resolvedBackground.flatMap({ UIColor($0) }) {
             wrappedNav.view.backgroundColor = backgroundColor
         }
 

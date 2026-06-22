@@ -159,6 +159,48 @@ struct ConduitActionTests {
     #endif
 }
 
+// MARK: - ConduitRouter Presentation Background Tests
+
+#if canImport(UIKit)
+private struct TestViewFactory: ConduitViewFactory {
+    func makeView(_ destination: TestDestination) -> AnyView {
+        AnyView(EmptyView())
+    }
+}
+
+@Suite("ConduitRouter presentation background resolution")
+@MainActor
+struct ConduitRouterBackgroundResolutionTests {
+
+    @Test("Explicit per-action background wins over the router default")
+    func explicitWins() {
+        let resolved = ConduitRouter<TestViewFactory>.resolvePresentationBackground(
+            explicit: .red,
+            default: .blue
+        )
+        #expect(resolved == .red)
+    }
+
+    @Test("Falls back to the router default when the action omits a background")
+    func fallsBackToDefault() {
+        let resolved = ConduitRouter<TestViewFactory>.resolvePresentationBackground(
+            explicit: nil,
+            default: .blue
+        )
+        #expect(resolved == .blue)
+    }
+
+    @Test("Resolves to nil when neither is provided")
+    func nilWhenNeither() {
+        let resolved = ConduitRouter<TestViewFactory>.resolvePresentationBackground(
+            explicit: nil,
+            default: nil
+        )
+        #expect(resolved == nil)
+    }
+}
+#endif
+
 // MARK: - ConduitBarPreferences Tests
 
 @Suite("ConduitBarPreferences Tests")

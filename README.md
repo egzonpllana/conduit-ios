@@ -17,6 +17,7 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 | Version | Type | Highlights |
 |---------|------|-----------|
+| **2.1.0** | Minor | `ConduitRouter` gains an optional `defaultPresentationBackground: Color?` init parameter. When a `.present` action does not specify its own `presentationBackground`, the router falls back to this app-wide default, so every modal gets a consistent host background without supplying it at each call site. Per-action `presentationBackground` still takes precedence. Defaults to `nil` (system background) — fully backward-compatible. |
 | **2.0.3** | Patch (docs) | Add **Dependency Injection & Dynamic Casts (iOS 18)** section: resolving `any ConduitDispatching<…>` / `any ConduitNavigationTracking<…>` through an `as?`-based DI container crashes on iOS 18 (parameterized-existential cast returns nil); use a plain app protocol or the concrete type at the DI boundary. |
 | **2.0.2** | Patch (docs) | Add **Concurrency & Sendability** section covering the four most common integration sharp edges (off-main dispatch, action-completion isolation, non-Sendable destination closures, app-extension restrictions). |
 | 2.0.1 | Patch | Promote `UIViewController.closestNavigationController()` from `internal` to `public` so consumer apps and app extensions can reuse it instead of duplicating the helper. |
@@ -303,6 +304,18 @@ let dispatcher = ConduitDispatcher<AppDestination>()
 let router = ConduitRouter(
     viewFactory: AppViewFactory(),
     dispatcher: dispatcher
+)
+```
+
+To give every modal a consistent host background without passing it at each
+`.present` call site, supply `defaultPresentationBackground` once. A per-action
+`presentationBackground` still overrides it:
+
+```swift
+let router = ConduitRouter(
+    dispatcher: dispatcher,
+    viewFactory: AppViewFactory(),
+    defaultPresentationBackground: .appModalBackground
 )
 ```
 
