@@ -119,16 +119,12 @@ final class ConduitNavigationBarCoordinator: NSObject, UINavigationControllerDel
     ) {
         guard navigationController.isNavigationBarHidden != isHidden else { return }
 
-        // Inside the transition so the bar and the content move together. The
-        // inner call is unanimated on purpose: the coordinator's block already
-        // supplies the timing.
-        if animated, let coordinator = navigationController.transitionCoordinator {
-            coordinator.animate(alongsideTransition: { _ in
-                navigationController.setNavigationBarHidden(isHidden, animated: false)
-            })
-        } else {
-            navigationController.setNavigationBarHidden(isHidden, animated: animated)
-        }
+        // `willShow` already runs inside the transition, so UIKit's own bar
+        // animation is coordinated with the push or pop. Do not wrap this in
+        // `transitionCoordinator.animate(alongsideTransition:)`: that replaces
+        // the coordinated transition with a plain frame animation, and the bar
+        // visibly slides down from the top instead of arriving with the screen.
+        navigationController.setNavigationBarHidden(isHidden, animated: animated)
     }
 }
 #endif
