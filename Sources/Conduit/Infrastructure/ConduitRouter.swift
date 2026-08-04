@@ -40,6 +40,10 @@ public final class ConduitRouter<Factory: ConduitViewFactory>: ConduitRouting {
     private var rootNavigationController: UINavigationController?
     private var presentedNavStack: [UINavigationController] = []
 
+    /// Applies `ConduitBarPreferences.isHidden` per destination and restores it
+    /// on the way back. See `ConduitNavigationBarCoordinator`.
+    private let barCoordinator = ConduitNavigationBarCoordinator()
+
     // MARK: - Initialization
 
     /// Creates a new router bound to a dispatcher and view factory.
@@ -298,7 +302,17 @@ private extension ConduitRouter {
         hostingController.navigationItem.largeTitleDisplayMode = preferences.largeTitleDisplayMode.uiKit
         hostingController.hidesBottomBarWhenPushed = preferences.hideTabBar
         hostingController.restorationIdentifier = viewFactory.makeIdentifier(destination)
-        navController.setNavigationBarHidden(preferences.isHidden, animated: true)
+
+        // The bar is applied by the coordinator during the push transition, not
+        // here: setting it alongside the push runs two unrelated animations and
+        // makes the bar jump in after the screen has laid out without it, and
+        // nothing would put it back when this screen is popped.
+        let isCoordinated = barCoordinator.attach(to: navController)
+        barCoordinator.setBarHidden(preferences.isHidden, for: hostingController)
+        if !isCoordinated {
+            navController.setNavigationBarHidden(preferences.isHidden, animated: true)
+        }
+
         navController.pushViewController(hostingController, animated: true)
     }
 
@@ -356,6 +370,13 @@ private extension ConduitRouter {
         wrappedNav.modalPresentationStyle = style.uiKit
         wrappedNav.isModalInPresentation = isModalInPresentation
         wrappedNav.setNavigationBarHidden(preferences.isHidden, animated: false)
+
+        // Applied directly above because this stack is brand new — there is no
+        // transition to ride and nothing underneath to restore. Registering it
+        // anyway means a later push *inside* this modal is coordinated, and
+        // popping back to the modal's root restores the root's own preference.
+        barCoordinator.attach(to: wrappedNav)
+        barCoordinator.setBarHidden(preferences.isHidden, for: hostingController)
 
         if let backgroundColor = resolvedBackground.flatMap({ UIColor($0) }) {
             wrappedNav.view.backgroundColor = backgroundColor

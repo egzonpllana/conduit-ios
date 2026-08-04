@@ -17,6 +17,7 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 | Version | Type | Highlights |
 |---------|------|-----------|
+| **2.2.0** | Minor | Navigation bar visibility is now resolved **per destination** by `ConduitNavigationBarCoordinator` during the transition, rather than applied stack-wide at push time. Fixes two long-standing bugs: the bar animated separately from the push (the incoming screen laid out bar-less, then jumped when the bar arrived), and it was never restored on pop (a screen that showed the bar left it over the screen underneath, shifting that content down). Pop, `popToRoot`, `popMultiple` and interactive swipe-back — including a *cancelled* swipe-back — now all resolve the incoming destination's own preference. No API change: `ConduitBarPreferences.isHidden` keeps its meaning. Apps that install their own `UINavigationControllerDelegate` keep it and fall back to the previous behaviour. |
 | **2.1.0** | Minor | `ConduitRouter` gains an optional `defaultPresentationBackground: Color?` init parameter. When a `.present` action does not specify its own `presentationBackground`, the router falls back to this app-wide default, so every modal gets a consistent host background without supplying it at each call site. Per-action `presentationBackground` still takes precedence. Defaults to `nil` (system background) — fully backward-compatible. |
 | **2.0.3** | Patch (docs) | Add **Dependency Injection & Dynamic Casts (iOS 18)** section: resolving `any ConduitDispatching<…>` / `any ConduitNavigationTracking<…>` through an `as?`-based DI container crashes on iOS 18 (parameterized-existential cast returns nil); use a plain app protocol or the concrete type at the DI boundary. |
 | **2.0.2** | Patch (docs) | Add **Concurrency & Sendability** section covering the four most common integration sharp edges (off-main dispatch, action-completion isolation, non-Sendable destination closures, app-extension restrictions). |
@@ -157,6 +158,7 @@ Casts to a plain existential or a concrete class are reliable on all runtimes.
 |-----------|------------|
 | `ConduitDispatcher<Destination>` | Combine `PassthroughSubject`-backed dispatcher. |
 | `ConduitRouter<Factory>` | Core engine: translates actions into UIKit transitions, walks the top-most presenter, defers when mid-transition. |
+| `ConduitNavigationBarCoordinator` | Resolves bar visibility per destination during transitions, and restores it on the way back (added in 2.2.0). |
 | `ConduitTabBarController` | Generic `UITabBarController` built from a `ConduitTabConfiguring`. |
 | `ConduitSheetDetentExpander` | Promote the top-most sheet to `.large` or pin to a custom height. |
 | `ConduitWindowUtils` | Active key-window and top-view-controller lookups. |
@@ -408,6 +410,20 @@ dispatcher.send(.push(
     )
 ))
 ```
+
+`isHidden` describes **that destination**, not the stack. Since 2.2.0 the router
+resolves it during the transition and restores the previous value when the
+screen is popped, so a root that hides its bar stays hidden after you come back
+from a screen that shows one — and the bar animates in with the push instead of
+jumping in afterwards.
+
+A destination you never gave preferences to inherits the bar state the stack had
+when Conduit first attached, so existing screens are unaffected.
+
+> If your app assigns its own `UINavigationControllerDelegate` to the same
+> navigation controller, Conduit will not replace it. Bar preferences are then
+> applied directly, as before 2.2.0, which cannot restore them on pop. Prefer
+> letting Conduit own that delegate.
 
 ### Adaptive Sheet Heights
 
