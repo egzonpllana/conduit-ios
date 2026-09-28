@@ -17,6 +17,8 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 | Version | Type | Highlights |
 |---------|------|-----------|
+| **2.2.2** | Patch (docs) | README brought in line with the 2.2.x API: `ConduitRouter(dispatcher:viewFactory:)` argument order, `makeView(_:)`, `ConduitTabItem(rootView:)`, `ConduitTabBarController(configuration:)`, and root setup through `changeRoot(to:in:)` / `setTabController(_:)` — there is no `start(in:)`. New **SwiftUI App Lifecycle** section, documented bar defaults (`.push` hides the navigation bar; `ConduitBarPreferences()` hides the tab bar), full `ConduitPresentationStyle` list, corrected source layout. No code change. |
+| 2.2.1 | Patch | The navigation bar now arrives together with the incoming screen: `setNavigationBarHidden` is called directly inside the push/pop transition so UIKit coordinates it, instead of a separate frame animation that slid the bar down from the top. |
 | **2.2.0** | Minor | Navigation bar visibility is now resolved **per destination** by `ConduitNavigationBarCoordinator` during the transition, rather than applied stack-wide at push time. Fixes two long-standing bugs: the bar animated separately from the push (the incoming screen laid out bar-less, then jumped when the bar arrived), and it was never restored on pop (a screen that showed the bar left it over the screen underneath, shifting that content down). Pop, `popToRoot`, `popMultiple` and interactive swipe-back — including a *cancelled* swipe-back — now all resolve the incoming destination's own preference. No API change: `ConduitBarPreferences.isHidden` keeps its meaning. Apps that install their own `UINavigationControllerDelegate` keep it and fall back to the previous behaviour. |
 | **2.1.0** | Minor | `ConduitRouter` gains an optional `defaultPresentationBackground: Color?` init parameter. When a `.present` action does not specify its own `presentationBackground`, the router falls back to this app-wide default, so every modal gets a consistent host background without supplying it at each call site. Per-action `presentationBackground` still takes precedence. Defaults to `nil` (system background) — fully backward-compatible. |
 | **2.0.3** | Patch (docs) | Add **Dependency Injection & Dynamic Casts (iOS 18)** section: resolving `any ConduitDispatching<…>` / `any ConduitNavigationTracking<…>` through an `as?`-based DI container crashes on iOS 18 (parameterized-existential cast returns nil); use a plain app protocol or the concrete type at the DI boundary. |
@@ -151,7 +153,6 @@ Casts to a plain existential or a concrete class are reliable on all runtimes.
 | `ConduitPresentationStyle` | Modal styles mapped to `UIModalPresentationStyle`. |
 | `ConduitLargeTitleDisplayMode` | Large-title preference for pushed and presented screens. |
 | `ConduitRootChangeMetadata` | Optional metadata attached to `.changeRoot` for tracker consumers. |
-| `ConduitTabItem` | Title + icon + root view + index for a tab bar tab. |
 
 ### Infrastructure (UIKit)
 | Component | What it is |
@@ -160,6 +161,7 @@ Casts to a plain existential or a concrete class are reliable on all runtimes.
 | `ConduitRouter<Factory>` | Core engine: translates actions into UIKit transitions, walks the top-most presenter, defers when mid-transition. |
 | `ConduitNavigationBarCoordinator` | Resolves bar visibility per destination during transitions, and restores it on the way back (added in 2.2.0). |
 | `ConduitTabBarController` | Generic `UITabBarController` built from a `ConduitTabConfiguring`. |
+| `ConduitTabItem` | Title + icon + root SwiftUI view + index for a tab bar tab. |
 | `ConduitSheetDetentExpander` | Promote the top-most sheet to `.large` or pin to a custom height. |
 | `ConduitWindowUtils` | Active key-window and top-view-controller lookups. |
 
@@ -208,7 +210,7 @@ The diagram illustrates seven navigation flows handled by Conduit's core actors:
 
 | # | Flow | Description |
 |---|------|-------------|
-| 1 | **App Launch** | Window setup, router start, tab bar configuration, Combine subscription |
+| 1 | **App Launch** | Window setup, root installed via `changeRoot` / `setTabController`, tab bar configuration, Combine subscription |
 | 2 | **Push Navigation** | Dispatcher sends push action, router resolves nav controller, pushes hosting controller |
 | 3 | **Modal Presentation** | Present with sheet style, detents, and drag indicator via `present(_:animated:)` |
 | 4 | **Pop and Dismiss** | Pop from navigation stack or dismiss presented modals with stack tracking |
@@ -224,22 +226,24 @@ Sources/Conduit/
 │   ├── ConduitDestination.swift        ← Marker protocol for app destinations
 │   ├── ConduitViewFactory.swift        ← Factory protocol: destination → AnyView
 │   ├── ConduitDispatching.swift        ← Dispatcher protocol (Combine publisher)
-│   ├── ConduitRouting.swift            ← Router protocol (start, changeRoot)
+│   ├── ConduitRouting.swift            ← Router protocol (changeRoot, updateActiveWindow)
 │   └── ConduitTabConfiguring.swift     ← Tab configuration protocol
 ├── Domain/
 │   ├── ConduitAction.swift             ← Generic navigation commands
-│   ├── ConduitBarPreferences.swift     ← Nav bar configuration
+│   ├── ConduitBarPreferences.swift     ← Nav bar configuration + large-title mode
 │   ├── ConduitDetent.swift             ← Sheet presentation detents
 │   ├── ConduitPresentationStyle.swift  ← Modal presentation styles
-│   ├── ConduitRootChangeMetadata.swift ← Metadata for .changeRoot actions
-│   └── ConduitTabItem.swift            ← Tab item configuration
+│   └── ConduitRootChangeMetadata.swift ← Metadata for .changeRoot actions
 ├── Infrastructure/
-│   ├── ConduitDispatcher.swift          ← PassthroughSubject-based dispatcher
-│   ├── ConduitRouter.swift             ← Core router: actions → UIKit navigation
-│   ├── ConduitTabBarController.swift   ← Generic configurable tab bar
-│   ├── ConduitSheetDetentExpander.swift ← Promote top sheet to large / custom height
-│   ├── UIViewController+Conduit.swift  ← Navigation controller resolution
-│   └── ConduitWindowUtils.swift        ← Active window lookup
+│   ├── ConduitDispatcher.swift              ← PassthroughSubject-based dispatcher
+│   ├── ConduitRouter.swift                 ← Core router: actions → UIKit navigation
+│   ├── ConduitNavigationBarCoordinator.swift ← Per-destination bar visibility during transitions
+│   ├── ConduitDomainMapping.swift          ← SDK enums → UIKit types
+│   ├── ConduitTabBarController.swift       ← Generic configurable tab bar
+│   ├── ConduitTabItem.swift                ← Tab item configuration
+│   ├── ConduitSheetDetentExpander.swift    ← Promote top sheet to large / custom height
+│   ├── UIViewController+Conduit.swift      ← Navigation controller resolution
+│   └── ConduitWindowUtils.swift            ← Active window lookup
 └── Tracking/
     ├── ConduitNavigatedScreen.swift              ← Marker protocol for trackable screens
     ├── ConduitNavigationContext.swift            ← Free-form key/value context bag
@@ -257,7 +261,7 @@ Add Conduit to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/egzonpllana/conduit-ios.git", from: "1.0.0")
+    .package(url: "https://github.com/egzonpllana/conduit-ios.git", from: "2.2.2")
 ]
 ```
 
@@ -283,10 +287,12 @@ enum AppDestination: ConduitDestination {
 
 ### 2. Implement the View Factory
 
+`ConduitViewFactory` is `@MainActor`. `makeIdentifier(_:)` is optional (defaults to
+`nil`); return a string to tag the hosting controller, e.g. to avoid duplicate pushes.
+
 ```swift
 struct AppViewFactory: ConduitViewFactory {
-    @MainActor
-    func makeView(for destination: AppDestination) -> AnyView {
+    func makeView(_ destination: AppDestination) -> AnyView {
         switch destination {
         case .profile(let userId):
             AnyView(ProfileView(userId: userId))
@@ -301,11 +307,15 @@ struct AppViewFactory: ConduitViewFactory {
 
 ### 3. Create Dispatcher and Router
 
+Create both once, on the main actor, and keep a strong reference to the router for
+the app's lifetime (a DI container singleton or a property on your app/scene delegate).
+A released router stops listening to the dispatcher.
+
 ```swift
 let dispatcher = ConduitDispatcher<AppDestination>()
 let router = ConduitRouter(
-    viewFactory: AppViewFactory(),
-    dispatcher: dispatcher
+    dispatcher: dispatcher,
+    viewFactory: AppViewFactory()
 )
 ```
 
@@ -321,23 +331,76 @@ let router = ConduitRouter(
 )
 ```
 
-### 4. Start Routing
+### 4. Install the Root (UIKit Scene Lifecycle)
+
+Describe the tabs with a `ConduitTabConfiguring`, then hand the root to the router with
+`changeRoot(to:in:)`. Passing a `UITabBarController` registers it for `.selectTab` and
+`.popToRootAndSelectTab`; passing a `UINavigationController` makes it the push stack;
+any other view controller is wrapped in a new `UINavigationController`. The router then
+sets the window's root and makes it key.
 
 ```swift
+struct AppTabConfiguration: ConduitTabConfiguring {
+    func tabItems() -> [ConduitTabItem] {
+        [
+            ConduitTabItem(title: "Home", icon: homeIcon, rootView: AnyView(HomeView()), index: 0),
+            ConduitTabItem(title: "Search", icon: searchIcon, rootView: AnyView(SearchView()), index: 1),
+            ConduitTabItem(title: "Profile", icon: profileIcon, rootView: AnyView(ProfileView()), index: 2)
+        ]
+    }
+}
+
 func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
     guard let windowScene = scene as? UIWindowScene else { return }
     let window = UIWindow(windowScene: windowScene)
+    self.window = window
 
-    let tabs = [
-        ConduitTabItem(title: "Home", icon: homeIcon, rootViewController: homeVC, index: 0),
-        ConduitTabItem(title: "Search", icon: searchIcon, rootViewController: searchVC, index: 1),
-        ConduitTabItem(title: "Profile", icon: profileIcon, rootViewController: profileVC, index: 2)
-    ]
-    let tabBar = ConduitTabBarController(tabs: tabs, selectedIndex: 0)
-
-    router.start(in: window, rootViewController: tabBar)
+    let tabBar = ConduitTabBarController(configuration: AppTabConfiguration())
+    router.changeRoot(to: tabBar, in: window)
 }
 ```
+
+Single-stack apps pass a navigation controller instead:
+
+```swift
+let home = UIHostingController(rootView: HomeView())
+router.changeRoot(to: UINavigationController(rootViewController: home), in: window)
+```
+
+### 4b. Install the Root (SwiftUI App Lifecycle)
+
+With `@main struct App`, SwiftUI owns the window. Host the tab bar through a
+`UIViewControllerRepresentable` and register it with `setTabController(_:)`; the
+router finds the active window and top-most presenter on its own.
+
+```swift
+struct ConduitHostView: UIViewControllerRepresentable {
+    let router: ConduitRouter<AppViewFactory>
+
+    func makeUIViewController(context: Context) -> ConduitTabBarController {
+        let tabBar = ConduitTabBarController(configuration: AppTabConfiguration())
+        router.setTabController(tabBar)
+        return tabBar
+    }
+
+    func updateUIViewController(_ uiViewController: ConduitTabBarController, context: Context) {}
+}
+
+@main
+struct MyApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    var body: some Scene {
+        WindowGroup {
+            ConduitHostView(router: appDelegate.router)
+                .ignoresSafeArea()
+        }
+    }
+}
+```
+
+`AppDelegate` here builds and owns the dispatcher and router (step 3) so both
+outlive any view.
 
 ### 5. Navigate from View Models
 
@@ -351,7 +414,7 @@ final class ProfileViewModel {
 
     @MainActor
     func didTapSettings() {
-        dispatcher.send(.push(.settings))
+        dispatcher.send(.push(.settings, barPreferences: .init(isHidden: false, hideTabBar: false)))
     }
 
     @MainActor
@@ -378,26 +441,40 @@ final class ProfileViewModel {
 func signOut(router: any ConduitRouting) {
     let signInVC = UIHostingController(rootView: SignInView())
     let nav = UINavigationController(rootViewController: signInVC)
-    router.changeRoot(to: nav)
+    router.changeRoot(to: nav, in: nil) // nil = the router's active window
 }
 ```
+
+Through the protocol the `in:` argument is required; only `ConduitRouter` itself
+declares the `nil` default. Prefer the `.changeRoot` action (below) when tracker
+subscribers should see the swap.
 
 ### Navigation Actions
 
 | Action | Description |
 |--------|-------------|
-| `.push(destination)` | Push onto current navigation stack |
-| `.present(destination, style:, detents:, presentationBackground:, ...)` | Present modally with sheet configuration and optional background color |
+| `.push(destination, barPreferences:)` | Push onto current navigation stack |
+| `.present(destination, style:, isModalInPresentation:, detents:, preferredHeight:, showDragIndicator:, presentationBackground:, barPreferences:, ...)` | Present modally with sheet configuration and optional background color |
 | `.openSafari(url)` | Present `SFSafariViewController` on the top-most presenter |
 | `.pop` | Pop top view controller |
-| `.popMultiple(count:)` | Pop multiple view controllers |
+| `.popMultiple(count:, animated:)` | Pop multiple view controllers |
 | `.popToRoot` | Pop to root of current stack |
-| `.dismiss()` | Dismiss top presented modal (with top-most-presenter fallback) |
+| `.dismiss(animated:, completion:)` | Dismiss top presented modal (with top-most-presenter fallback) |
 | `.changeRoot(rootBuilder:, metadata:)` | Swap `window.rootViewController`; the closure builds the new root on `MainActor` |
 | `.selectTab(index)` | Select a tab bar tab |
-| `.popToRootAndSelectTab(tabIndex:, reason:)` | Reset all stacks and select tab |
+| `.popToRootAndSelectTab(tabIndex:, reason:, completion:)` | Reset all stacks and select tab |
 
 ### Bar Preferences
+
+Two defaults decide what a screen looks like when you pass nothing:
+
+| Call | Navigation bar | Tab bar |
+|------|----------------|---------|
+| `.push(dest)` / `.present(dest, style:)` | **hidden** (`barPreferences` defaults to `.init(isHidden: true)`) | hidden |
+| `ConduitBarPreferences()` | shown | **hidden** (`hideTabBar` defaults to `true`) |
+
+So a pushed screen that should keep both bars passes
+`.init(isHidden: false, hideTabBar: false)`.
 
 ```swift
 // Show navigation bar with large title, keep tab bar visible
@@ -452,7 +529,8 @@ ConduitSheetDetentExpander.setCustomHeight(420)
 ### Open Safari
 
 ```swift
-dispatcher.send(.openSafari(URL(string: "https://example.com")!))
+guard let url = URL(string: "https://example.com") else { return }
+dispatcher.send(.openSafari(url))
 ```
 
 `ConduitRouter` presents `SFSafariViewController` on the top-most presenter so
@@ -569,7 +647,7 @@ let visitsToProfile = tracker.navigationEntries(toScreen: .profile)
 | `ConduitDestination` | Marker protocol for app-defined navigation destinations |
 | `ConduitViewFactory` | Factory that converts destinations to `AnyView` |
 | `ConduitDispatching` | Navigation action publisher and sender |
-| `ConduitRouting` | Router lifecycle: start, updateWindow, changeRoot |
+| `ConduitRouting` | Router lifecycle: `changeRoot(to:in:)`, `updateActiveWindow(_:)` |
 | `ConduitTabConfiguring` | Tab bar item definition protocol |
 | `ConduitNavigatedScreen` | Marker protocol for trackable screen enums |
 | `ConduitNavigationTracking` | Tracker protocol: stacks, history, publishers |
@@ -581,10 +659,10 @@ let visitsToProfile = tracker.navigationEntries(toScreen: .profile)
 | `ConduitAction<Destination>` | Generic navigation command enum |
 | `ConduitBarPreferences` | Navigation bar visibility and title configuration |
 | `ConduitDetent` | Sheet detents: `.medium`, `.large`, `.custom(CGFloat)`, `.fraction(CGFloat)`, `.adaptiveHeight` |
-| `ConduitPresentationStyle` | Modal styles: `.pageSheet`, `.formSheet`, `.fullScreen`, `.overFullScreen` |
+| `ConduitPresentationStyle` | Modal styles: `.pageSheet`, `.formSheet`, `.fullScreen`, `.overFullScreen`, `.currentContext`, `.overCurrentContext` |
 | `ConduitLargeTitleDisplayMode` | Title modes: `.automatic`, `.always`, `.never` |
 | `ConduitRootChangeMetadata` | Optional metadata attached to `.changeRoot` actions |
-| `ConduitTabItem` | Tab configuration: title, icon, root view controller, index |
+| `ConduitTabItem` | Tab configuration: title, icon, root SwiftUI view (`AnyView`), index |
 
 ### Infrastructure
 
