@@ -25,14 +25,24 @@ import UIKit
 /// preference. A controller with no recorded preference falls back to the
 /// baseline captured when Conduit first attached, so a root the app configured
 /// itself keeps whatever it set.
+///
+/// It also owns the edge swipe back. UIKit turns `interactivePopGestureRecognizer`
+/// off whenever the bar is hidden, and `.push` hides it by default, so every
+/// stack Conduit manages would otherwise lose the system back gesture. The
+/// coordinator becomes the gesture's delegate and allows it whenever there is
+/// something to pop, no transition is running, and the top screen has not
+/// turned it off with `conduitSwipeBackDisabled(_:)`.
 @MainActor
-final class ConduitNavigationBarCoordinator: NSObject, UINavigationControllerDelegate {
+final class ConduitNavigationBarCoordinator: NSObject, UINavigationControllerDelegate, UIGestureRecognizerDelegate {
 
     /// Per-controller preference. Weak keys so entries die with their screens.
     private let preferences = NSMapTable<UIViewController, NSNumber>.weakToStrongObjects()
 
     /// Bar state each stack had before Conduit touched it.
     private let baselines = NSMapTable<UINavigationController, NSNumber>.weakToStrongObjects()
+
+    /// The stack each swipe-back recognizer belongs to.
+    private let swipeStacks = NSMapTable<UIGestureRecognizer, UINavigationController>.weakToWeakObjects()
 
     /// Becomes the stack's delegate so transitions can be observed.
     ///
@@ -60,6 +70,7 @@ final class ConduitNavigationBarCoordinator: NSObject, UINavigationControllerDel
             forKey: navigationController
         )
         navigationController.delegate = self
+        installSwipeBack(on: navigationController)
         return true
     }
 
@@ -95,6 +106,27 @@ final class ConduitNavigationBarCoordinator: NSObject, UINavigationControllerDel
                 animated: animated
             )
         }
+    }
+
+    // MARK: - Swipe back
+
+    private func installSwipeBack(on navigationController: UINavigationController) {
+        guard let recognizer = navigationController.interactivePopGestureRecognizer else { return }
+        swipeStacks.setObject(navigationController, forKey: recognizer)
+        recognizer.delegate = self
+    }
+
+    /// Whether the edge swipe may start on the stack that owns `recognizer`.
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let navigationController = swipeStacks.object(forKey: gestureRecognizer) else { return false }
+        return Self.allowsSwipeBack(in: navigationController)
+    }
+
+    static func allowsSwipeBack(in navigationController: UINavigationController) -> Bool {
+        guard navigationController.viewControllers.count > 1,
+              navigationController.transitionCoordinator == nil,
+              let top = navigationController.topViewController else { return false }
+        return !ConduitSwipeBack.isDisabled(for: top)
     }
 
     // MARK: - Resolution

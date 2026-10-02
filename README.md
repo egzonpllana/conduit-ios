@@ -17,6 +17,7 @@ dispatcher.send(.push(.profile(userId: "123")))
 
 | Version | Type | Highlights |
 |---------|------|-----------|
+| **2.3.0** | Minor | The edge swipe back now works on every stack Conduit manages (tab stacks, the root stack and stacks inside presented modals), even with the navigation bar hidden. UIKit turns `interactivePopGestureRecognizer` off whenever the bar is hidden, and `.push` hides it by default, so apps lost the system back gesture unless they patched each navigation controller. `ConduitNavigationBarCoordinator` now becomes the recognizer's delegate when it attaches and allows the swipe when there is something to pop, no transition is running, and the top screen has not opted out. New: `View.conduitSwipeBackDisabled(_:)` turns it off for one screen, for example while an edit has unsaved changes. |
 | **2.2.2** | Patch (docs) | README brought in line with the 2.2.x API: `ConduitRouter(dispatcher:viewFactory:)` argument order, `makeView(_:)`, `ConduitTabItem(rootView:)`, `ConduitTabBarController(configuration:)`, and root setup through `changeRoot(to:in:)` / `setTabController(_:)` — there is no `start(in:)`. New **SwiftUI App Lifecycle** section, documented bar defaults (`.push` hides the navigation bar; `ConduitBarPreferences()` hides the tab bar), full `ConduitPresentationStyle` list, corrected source layout. No code change. |
 | 2.2.1 | Patch | The navigation bar now arrives together with the incoming screen: `setNavigationBarHidden` is called directly inside the push/pop transition so UIKit coordinates it, instead of a separate frame animation that slid the bar down from the top. |
 | **2.2.0** | Minor | Navigation bar visibility is now resolved **per destination** by `ConduitNavigationBarCoordinator` during the transition, rather than applied stack-wide at push time. Fixes two long-standing bugs: the bar animated separately from the push (the incoming screen laid out bar-less, then jumped when the bar arrived), and it was never restored on pop (a screen that showed the bar left it over the screen underneath, shifting that content down). Pop, `popToRoot`, `popMultiple` and interactive swipe-back — including a *cancelled* swipe-back — now all resolve the incoming destination's own preference. No API change: `ConduitBarPreferences.isHidden` keeps its meaning. Apps that install their own `UINavigationControllerDelegate` keep it and fall back to the previous behaviour. |
@@ -501,6 +502,22 @@ when Conduit first attached, so existing screens are unaffected.
 > navigation controller, Conduit will not replace it. Bar preferences are then
 > applied directly, as before 2.2.0, which cannot restore them on pop. Prefer
 > letting Conduit own that delegate.
+
+### Swipe Back
+
+Since 2.3.0 the edge swipe back works on every pushed screen, whether or not the
+navigation bar is hidden. Conduit takes over the stack's
+`interactivePopGestureRecognizer` delegate when it first attaches (on the first
+push into a stack, or when it presents a modal) and lets the swipe start when
+there is a screen to go back to and no transition is running.
+
+A screen that must confirm before leaving turns the swipe off while that is true.
+Its own back button keeps working:
+
+```swift
+EditStayView(model: model)
+    .conduitSwipeBackDisabled(model.hasChanges)
+```
 
 ### Adaptive Sheet Heights
 

@@ -103,5 +103,61 @@ struct ConduitNavigationBarCoordinatorTests {
         coordinator.navigationController(stack, willShow: showsBar, animated: false)
         #expect(stack.isNavigationBarHidden == false)
     }
+
+    // MARK: - Swipe back
+
+    @Test("Attaching takes over the swipe-back recognizer")
+    func attachInstallsSwipeBack() {
+        let coordinator = ConduitNavigationBarCoordinator()
+        let stack = makeStack(barHidden: true)
+
+        coordinator.attach(to: stack)
+
+        #expect(stack.interactivePopGestureRecognizer?.delegate === coordinator)
+    }
+
+    @Test("Swipe back is off on a stack's root")
+    func swipeBackOffAtRoot() throws {
+        let coordinator = ConduitNavigationBarCoordinator()
+        let stack = makeStack(barHidden: true)
+        coordinator.attach(to: stack)
+        let recognizer = try #require(stack.interactivePopGestureRecognizer)
+
+        #expect(coordinator.gestureRecognizerShouldBegin(recognizer) == false)
+    }
+
+    @Test("Swipe back works on a pushed screen with the bar hidden")
+    func swipeBackOnPushedScreen() throws {
+        let coordinator = ConduitNavigationBarCoordinator()
+        let stack = makeStack(barHidden: true)
+        coordinator.attach(to: stack)
+        stack.setViewControllers([UIViewController(), UIViewController()], animated: false)
+        let recognizer = try #require(stack.interactivePopGestureRecognizer)
+
+        #expect(coordinator.gestureRecognizerShouldBegin(recognizer))
+    }
+
+    @Test("A screen that turned swipe back off blocks it until it turns it on")
+    func swipeBackDisabledPerScreen() throws {
+        let coordinator = ConduitNavigationBarCoordinator()
+        let stack = makeStack(barHidden: true)
+        coordinator.attach(to: stack)
+        let top = UIViewController()
+        stack.setViewControllers([UIViewController(), top], animated: false)
+        let recognizer = try #require(stack.interactivePopGestureRecognizer)
+
+        ConduitSwipeBack.setDisabled(true, for: top)
+        #expect(coordinator.gestureRecognizerShouldBegin(recognizer) == false)
+
+        ConduitSwipeBack.setDisabled(false, for: top)
+        #expect(coordinator.gestureRecognizerShouldBegin(recognizer))
+    }
+
+    @Test("A recognizer from a stack the coordinator doesn't own never starts")
+    func foreignRecognizerNeverBegins() {
+        let coordinator = ConduitNavigationBarCoordinator()
+
+        #expect(coordinator.gestureRecognizerShouldBegin(UIPanGestureRecognizer()) == false)
+    }
 }
 #endif
